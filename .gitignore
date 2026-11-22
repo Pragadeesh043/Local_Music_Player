@@ -1,0 +1,11 @@
+.dotnet/
+.venv/
+venv/
+.tools/
+.nuget/
+.verify/
+bin/
+obj/
+artifacts/
+.vs/
+*.user

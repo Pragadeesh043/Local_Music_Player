@@ -1,0 +1,190 @@
+<Window x:Class="Soundroom.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Soundroom">
+    <Grid x:Name="Root" RequestedTheme="Dark" Background="#151419">
+        <Grid.Resources>
+            <SolidColorBrush x:Key="AccentBrush" Color="#FA7182" />
+            <SolidColorBrush x:Key="SecondaryBrush" Color="#B7B0BB" />
+        </Grid.Resources>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="262" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="368" />
+        </Grid.ColumnDefinitions>
+        <Grid Background="#1E1B23" Padding="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <StackPanel Spacing="15">
+                <TextBlock Text="Soundroom" FontSize="27" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Add files" Click="AddFiles" />
+                    <Button Content="Watch folder" Click="AddFolder" />
+                </StackPanel>
+                <TextBlock x:Name="SourceStatus" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{StaticResource SecondaryBrush}" />
+                <TextBox x:Name="Search" PlaceholderText="Search your library" TextChanged="SearchChanged" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox x:Name="LibraryView" SelectionChanged="LibraryViewChanged" Width="130">
+                        <ComboBoxItem Content="Tracks" />
+                        <ComboBoxItem Content="Folders" />
+                        <ComboBoxItem Content="Albums / editions" />
+                    </ComboBox>
+                    <Button Content="Filters" Click="EditFilters" />
+                </StackPanel>
+                <ComboBox x:Name="LibraryGroup" HorizontalAlignment="Stretch" Visibility="Collapsed"
+                          SelectionChanged="LibraryGroupChanged" />
+                <ComboBox x:Name="Editions" HorizontalAlignment="Stretch" Visibility="Collapsed"
+                          SelectionChanged="LibraryGroupChanged" />
+                <TextBlock x:Name="LibraryCount" Text="Library" Foreground="{StaticResource SecondaryBrush}" />
+            </StackPanel>
+            <ListView x:Name="TrackList" Grid.Row="1" Margin="0,8,0,0" SelectionMode="Single"
+                      IsItemClickEnabled="True" ItemClick="TrackClicked">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Padding="2,7" Spacing="3">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Subtitle}" FontSize="12" Foreground="#B7B0BB"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="NowPlaying" Margin="32,26,32,26" Spacing="14" HorizontalAlignment="Stretch">
+                <TextBlock Text="Now playing" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                <Border x:Name="ArtworkFrame" CornerRadius="14" Height="300" MaxWidth="440"
+                        HorizontalAlignment="Stretch">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#683148" Offset="0" />
+                            <GradientStop Color="#331E36" Offset="0.55" />
+                            <GradientStop Color="#24263F" Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid>
+                        <FontIcon x:Name="ArtworkFallback" Glyph="&#xE8D6;" FontSize="88" Foreground="#F9A5B3" />
+                        <Image x:Name="Cover" Stretch="UniformToFill" />
+                    </Grid>
+                </Border>
+                <TextBlock x:Name="TrackTitle" Text="No track playing" FontSize="34"
+                           FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock x:Name="TrackSubtitle" Text="Add local music or choose a track from your library."
+                           Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" />
+                <TextBlock x:Name="TrackFormat" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" />
+                <Border Background="#201D26" Padding="14" CornerRadius="10">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Output" FontWeight="SemiBold" />
+                        <ComboBox x:Name="Devices" HorizontalAlignment="Stretch" SelectionChanged="OutputChanged"
+                                  AutomationProperties.Name="Audio device" />
+                        <ComboBox x:Name="Routes" HorizontalAlignment="Stretch" SelectionChanged="OutputChanged"
+                                  AutomationProperties.Name="Output mode">
+                            <ComboBoxItem Content="Binaural headphones" />
+                            <ComboBoxItem Content="Stereo downmix" />
+                            <ComboBoxItem Content="7.1 device / HeSuVi" />
+                            <ComboBoxItem Content="Exclusive · direct PCM" />
+                            <ComboBoxItem Content="Exclusive · DSP / resampling" />
+                            <ComboBoxItem Content="Exclusive · DSD over PCM" />
+                            <ComboBoxItem Content="ASIO · native DSD" />
+                        </ComboBox>
+                        <Button Content="Output settings" Click="ShowOutputSettings" />
+                        <TextBlock x:Name="SignalPath" TextWrapping="Wrap" FontSize="12"
+                                   Foreground="{StaticResource SecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+        <Grid Grid.Column="2" Background="#1E1B23" Padding="20,20,20,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock Text="Audio inspector" FontSize="22" FontWeight="SemiBold" />
+            <Pivot Grid.Row="1" Margin="-8,6,-8,0">
+                <PivotItem Header="Channels">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="12">
+                            <Canvas x:Name="SpeakerMap" Background="#27232D" Height="190" SizeChanged="MapResized" />
+                            <TextBlock Text="Source channels" FontWeight="SemiBold" />
+                            <StackPanel x:Name="SourceMeters" Spacing="4" />
+                            <TextBlock x:Name="InspectLabel" Text="Select a channel to inspect its signal."
+                                       FontSize="12" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" />
+                            <Grid ColumnSpacing="5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Canvas x:Name="WaveCanvas" Height="65" Background="#27232D" />
+                                <Canvas x:Name="SpectrumCanvas" Grid.Column="1" Height="65" Background="#27232D" />
+                            </Grid>
+                            <TextBlock Text="Player output" FontWeight="SemiBold" />
+                            <TextBlock x:Name="LiveStats" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" />
+                            <StackPanel x:Name="OutputMeters" Spacing="4" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </PivotItem>
+                <PivotItem Header="DSP">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="DspPanel" Spacing="10">
+                            <ToggleSwitch x:Name="DspEnabled" Header="Headphone DSP" IsOn="True" />
+                            <Canvas x:Name="EqChart" Height="104" Background="#27232D" SizeChanged="EqResized" />
+                            <TextBlock Text="Response curve · 20 Hz to 20 kHz" FontSize="12"
+                                       Foreground="{StaticResource SecondaryBrush}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </PivotItem>
+                <PivotItem Header="File">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="Scan track" Click="ScanTrack" />
+                                <Button Content="Scan edition" Click="ScanAlbum" />
+                                <Button Content="Rate" Click="RateTrack" />
+                            </StackPanel>
+                            <Button Content="Artwork and booklet" Click="OpenBooklet" />
+                            <TextBlock x:Name="TrackInfo" Text="Select a track to see file details."
+                                       IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </PivotItem>
+            </Pivot>
+        </Grid>
+        <Grid Grid.Row="1" Grid.ColumnSpan="3" Background="#25212B" Padding="22,10" ColumnSpacing="18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="135" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <Button Click="Previous" AutomationProperties.Name="Previous track"><FontIcon Glyph="&#xE892;" /></Button>
+                <Button x:Name="PlayButton" Click="TogglePlay" AutomationProperties.Name="Play or pause"
+                        Background="#FA7182" Foreground="#20151B" Width="52"><FontIcon x:Name="PlayIcon" Glyph="&#xE768;" /></Button>
+                <Button Click="Next" AutomationProperties.Name="Next track"><FontIcon Glyph="&#xE893;" /></Button>
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="Elapsed" Text="0:00" VerticalAlignment="Center" />
+                    <Slider x:Name="Seek" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.1"
+                            AutomationProperties.Name="Playback position" />
+                    <TextBlock x:Name="Duration" Grid.Column="2" Text="0:00" VerticalAlignment="Center" />
+                </Grid>
+                <TextBlock x:Name="Status" TextTrimming="CharacterEllipsis" FontSize="12"
+                           Foreground="{StaticResource SecondaryBrush}" />
+            </StackPanel>
+            <Slider Grid.Column="2" x:Name="Volume" Header="Volume" Minimum="0" Maximum="100" Value="75"
+                    ValueChanged="VolumeChanged" />
+        </Grid>
+    </Grid>
+</Window>
