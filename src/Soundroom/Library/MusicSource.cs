@@ -49,20 +49,25 @@ internal sealed record FileStamp(long Length, long ModifiedUtc);
 
 internal static class SourceScanner
 {
-    public static Dictionary<string, FileStamp> Snapshot(string root, List<string>? inaccessible = null)
+    public static Dictionary<string, FileStamp> Snapshot(string root, List<string>? inaccessible = null,
+        Action? waitForPlayback = null)
     {
         var result = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
         var pending = new Stack<DirectoryInfo>();
         pending.Push(new(root));
         while (pending.TryPop(out var folder))
         {
+            waitForPlayback?.Invoke();
             try
             {
+                int entries = 0;
                 foreach (var entry in folder.EnumerateFileSystemInfos("*", new EnumerationOptions
                 {
                     IgnoreInaccessible = false, AttributesToSkip = FileAttributes.ReparsePoint
                 }))
                 {
+                    if (++entries % 64 == 0)
+                        waitForPlayback?.Invoke();
                     if (entry is DirectoryInfo directory)
                         pending.Push(directory);
                     else if (entry is FileInfo file && !file.Extension.Equals(".iso", StringComparison.OrdinalIgnoreCase) &&
@@ -76,5 +81,12 @@ internal static class SourceScanner
             }
         }
         return result;
+    }
+
+    internal static async Task WaitForPlaybackAsync(Func<bool> needsPlaybackBuffer, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        while (needsPlaybackBuffer())
+            await Task.Delay(30, cancellation).ConfigureAwait(false);
     }
 }

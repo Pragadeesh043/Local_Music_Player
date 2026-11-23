@@ -9,79 +9,121 @@ using WinRT.Interop;
 
 namespace Soundroom;
 
-internal sealed record SmartFilter(string Codec = "", int MinimumRate = 0, int MinimumBits = 0,
-    double MinimumDr = 0, string Genre = "", string Year = "", int Rating = 0, int Plays = 0)
-{
-    public bool Matches(Track track) =>
-        (Codec.Length == 0 || track.Codec.Contains(Codec, StringComparison.OrdinalIgnoreCase)) &&
-        track.Rate >= MinimumRate && track.Bits >= MinimumBits &&
-        (MinimumDr == 0 || track.Analysis?.DynamicRange >= MinimumDr) &&
-        (Genre.Length == 0 || track.Tag("genre").Contains(Genre, StringComparison.OrdinalIgnoreCase)) &&
-        (Year.Length == 0 || track.Tag("date", "year").StartsWith(Year, StringComparison.Ordinal)) &&
-        track.Rating >= Rating && track.PlayCount >= Plays;
-}
-
 public sealed partial class MainWindow
 {
     private SmartFilter smartFilter = new();
     private bool changingGroups, scanning;
 
-    private IEnumerable<Track> FilterTracks(string query)
+    private const int PageSize = 80;
+    private readonly CancellationTokenSource libraryLifetime = new();
+    private Track[] visibleTracks = [];
+    private int pageIndex, pageRevision, moveRevision;
+    private bool catalogReady;
+
+    private async Task InitializeLibraryAsync()
+    {
+        var cancellation = libraryLifetime.Token;
+        Closed += (_, _) => libraryLifetime.Cancel();
+        LibraryCount.Text = "Opening library…";
+        try
+        {
+            await Task.Run(() => library.EnsureCatalog(cancellation), cancellation);
+            if (!ready)
+                return;
+            catalogReady = true;
+            StartSourceMonitoring();
+            RefreshGroups();
+            RefreshLibrary();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception error) { ShowError("Preparing the library index", error); }
+    }
+
+    private LibraryQuery CurrentLibraryQuery()
     {
         string? group = LibraryGroup.SelectedItem as string;
         string? edition = Editions.SelectedItem as string;
-        var coveredPaths = tracks.Where(item => !item.Missing && item.SourceId is not null && item.CueIndex > 0)
-            .Select(item => (item.SourceId, item.RelativePath)).ToHashSet();
-        var registeredPaths = tracks.Where(item => !item.Missing && item.SourceId is not null)
-            .Select(item => (item.Path.ToUpperInvariant(), item.CueIndex)).ToHashSet();
-        var result = tracks.Where(item => !item.Missing &&
-            (item.SourceId is not null || !registeredPaths.Contains((item.Path.ToUpperInvariant(), item.CueIndex))) &&
-            (item.CueIndex > 0 || !coveredPaths.Contains((item.SourceId, item.RelativePath))) && smartFilter.Matches(item) &&
-            (query.Length == 0 || new[] { item.Title, item.Artist, item.Album, item.Folder }.Concat(item.Tags.Values)
-                .Any(value => value.Contains(query, StringComparison.CurrentCultureIgnoreCase))));
-        if (group is not null && group != "All" && LibraryView.SelectedIndex == 1)
-            result = result.Where(item => item.Folder.Equals(group, StringComparison.OrdinalIgnoreCase) ||
-                Path.GetRelativePath(group, item.Folder) is string relative && !relative.StartsWith("..", StringComparison.Ordinal) &&
-                !Path.IsPathRooted(relative));
-        if (group is not null && group != "All" && LibraryView.SelectedIndex == 2)
-            result = result.Where(item => item.AlbumGroup == group);
-        if (edition is not null && edition != "All" && LibraryView.SelectedIndex == 2)
-            result = result.Where(item => item.Edition == edition);
-        return result.OrderBy(item => item.AlbumGroup).ThenBy(item => item.Edition)
-            .ThenBy(item => TagNumber(item.Tag("disc", "discnumber")))
-            .ThenBy(item => TagNumber(item.Tag("track", "tracknumber"))).ThenBy(item => item.Title);
+        return new(Search.Text.Trim(), smartFilter, LibraryView.SelectedIndex == 1 && group != "All" ? group : null,
+            LibraryView.SelectedIndex == 2 && group != "All" ? group : null,
+            LibraryView.SelectedIndex == 2 && edition != "All" ? edition : null);
     }
 
-    private static int TagNumber(string tag) => int.TryParse(tag.Split('/')[0], out int value) ? value : int.MaxValue;
-
-    private Track[] QueueTracks() => FilterTracks(Search.Text.Trim()).ToArray();
-
-    private Track[] Following(Track current)
+    private async void RefreshLibrary(bool reset = false, bool debounce = false)
     {
-        var list = QueueTracks();
-        int index = Array.FindIndex(list, item => item.Key == current.Key);
-        return index >= 0 ? list[(index + 1)..].Where(IsSourceOnline).ToArray() : [];
+        if (!catalogReady)
+            return;
+        if (reset)
+            pageIndex = 0;
+        int revision = ++pageRevision, requestedPage = pageIndex;
+        var query = CurrentLibraryQuery();
+        await RunUiAction("Loading library tracks", async () =>
+        {
+            if (debounce)
+                await Task.Delay(150);
+            if (!ready || revision != pageRevision)
+                return;
+            var page = await Task.Run(() => library.Page(query, requestedPage * PageSize, PageSize));
+            if (!ready || revision != pageRevision)
+                return;
+            int pages = Math.Max(1, (page.Total + PageSize - 1) / PageSize);
+            if (requestedPage >= pages)
+            {
+                pageIndex = pages - 1;
+                RefreshLibrary();
+                return;
+            }
+            visibleTracks = page.Tracks.Select(WithMountedPath).ToArray();
+            TrackList.ItemsSource = visibleTracks;
+            RefreshTrackSelection();
+            LibraryCount.Text = $"{page.Total:N0} {(page.Total == 1 ? "track" : "tracks")}";
+            PageLabel.Text = pages == 1 ? "" : $"{requestedPage + 1:N0} / {pages:N0}";
+            PreviousPageButton.IsEnabled = requestedPage > 0;
+            NextPageButton.IsEnabled = requestedPage + 1 < pages;
+        });
+    }
+
+    private void PreviousPage(object sender, RoutedEventArgs args)
+    {
+        if (pageIndex == 0) return;
+        pageIndex--;
+        RefreshLibrary();
+    }
+
+    private void NextPage(object sender, RoutedEventArgs args)
+    {
+        pageIndex++;
+        RefreshLibrary();
+    }
+
+    private void RefreshTrackSelection() => TrackList.SelectedItem =
+        visibleTracks.FirstOrDefault(item => item.Key == track?.Key);
+
+    private Func<Track, Track?> CreatePlaybackQueue()
+    {
+        var query = CurrentLibraryQuery();
+        var mounts = new Dictionary<string, string>(mountedSources, StringComparer.OrdinalIgnoreCase);
+        string[] ids = mounts.Keys.ToArray();
+        return current =>
+        {
+            var next = library.Neighbors(query, current.Key, backwards: false, limit: 1, onlineSources: ids).FirstOrDefault();
+            return next is { SourceId: { } id, RelativePath: { } relative } && mounts.TryGetValue(id, out var folder)
+                ? next with { Path = Path.Combine(folder, relative) } : next;
+        };
     }
 
     private void SaveTrack(Track value)
     {
+        value = WithMountedPath(value);
         library.Save(value);
-        if (trackIndices.TryGetValue(value.Key, out int index))
-            tracks[index] = value;
-        else
-        {
-            trackIndices[value.Key] = tracks.Count;
-            tracks.Add(value);
-        }
         if (track?.Key == value.Key)
             track = value;
     }
 
     private void CountPlay(Track playing)
     {
-        Track latest = tracks.FirstOrDefault(item => item.Key == playing.Key) ?? playing;
         try
         {
+            Track latest = library.FindTrack(playing.Key) ?? playing;
             SaveTrack(latest with { PlayCount = latest.PlayCount + 1 });
             RefreshTrackInfo();
         }
@@ -100,19 +142,19 @@ public sealed partial class MainWindow
 
     private void LibraryViewChanged(object sender, SelectionChangedEventArgs args)
     {
-        if (!ready)
+        if (!catalogReady)
             return;
         RefreshGroups(reset: true);
-        RefreshLibrary();
+        RefreshLibrary(reset: true);
     }
 
     private void LibraryGroupChanged(object sender, SelectionChangedEventArgs args)
     {
-        if (!ready || changingGroups)
+        if (!catalogReady || changingGroups)
             return;
         if (ReferenceEquals(sender, LibraryGroup))
             RefreshGroups();
-        RefreshLibrary();
+        RefreshLibrary(reset: true);
     }
 
     private void RefreshGroups(bool reset = false)
@@ -123,8 +165,8 @@ public sealed partial class MainWindow
         var oldEdition = reset ? null : Editions.SelectedItem as string;
         var groups = view switch
         {
-            1 => tracks.SelectMany(item => Ancestors(item.Folder)),
-            2 => tracks.Where(item => item.Album.Length > 0).Select(item => item.AlbumGroup),
+            1 => library.Groups(1).SelectMany(Ancestors),
+            2 => library.Groups(2),
             _ => Enumerable.Empty<string>()
         };
         var names = groups.Distinct(StringComparer.OrdinalIgnoreCase).Order().Prepend("All").ToArray();
@@ -134,7 +176,7 @@ public sealed partial class MainWindow
         string? album = LibraryGroup.SelectedItem as string;
         bool showEditions = view == 2 && album is not null && album != "All";
         var editions = showEditions
-            ? tracks.Where(item => item.AlbumGroup == album).Select(item => item.Edition).Distinct().Order().Prepend("All").ToArray()
+            ? library.Groups(2, album).Prepend("All").ToArray()
             : ["All"];
         Editions.ItemsSource = editions;
         Editions.SelectedItem = oldEdition is not null && editions.Contains(oldEdition) ? oldEdition : "All";
@@ -202,7 +244,7 @@ public sealed partial class MainWindow
             playlists[title] = smartFilter;
             library.Put("playlists", playlists);
         }
-        RefreshLibrary();
+        RefreshLibrary(reset: true);
     }
 
     private async void ScanTrack(object sender, RoutedEventArgs args)
@@ -213,8 +255,8 @@ public sealed partial class MainWindow
         Status.Text = $"Analyzing {selected.Title}…";
         try
         {
-            var analysis = await FileAnalysis.ScanAsync(selected);
-            var latest = tracks.FirstOrDefault(item => item.Key == selected.Key) ?? selected;
+            var analysis = await FileAnalysis.ScanAsync(ResolvePlaybackTrack(selected));
+            var latest = library.FindTrack(selected.Key) ?? selected;
             SaveTrack(latest with { Analysis = analysis });
             RefreshTrackInfo();
             RefreshLibrary();
@@ -231,13 +273,13 @@ public sealed partial class MainWindow
         scanning = true;
         try
         {
-            var album = selected.Album.Length == 0 ? [selected] : tracks.Where(item =>
-                item.AlbumGroup == selected.AlbumGroup && item.Edition == selected.Edition).ToArray();
+            var album = selected.Album.Length == 0 ? [selected] : library.Page(new("", new(), Album: selected.AlbumGroup, Edition: selected.Edition), 0, 101).Tracks
+                .Select(ResolvePlaybackTrack).ToArray();
             Status.Text = $"Scanning {album.Length} tracks in this edition…";
             var albumStats = await FileAnalysis.ScanAlbumAsync(album);
             foreach (var item in album)
             {
-                var latest = tracks.FirstOrDefault(t => t.Key == item.Key) ?? item;
+                var latest = library.FindTrack(item.Key) ?? item;
                 TrackAnalysis analysis = latest.Analysis ?? new(null, null, null, null, "", "");
                 SaveTrack(latest with { Analysis = analysis with { AlbumLufs = albumStats.Lufs, AlbumReplayGain = albumStats.ReplayGain } });
             }
@@ -260,7 +302,7 @@ public sealed partial class MainWindow
             PrimaryButtonText = "Save rating", CloseButtonText = "Cancel" };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            var latest = tracks.FirstOrDefault(item => item.Key == selected.Key) ?? selected;
+            var latest = library.FindTrack(selected.Key) ?? selected;
             SaveTrack(latest with { Rating = rating.SelectedIndex });
             RefreshTrackInfo();
             RefreshLibrary();

@@ -28,19 +28,15 @@ internal static class Speakers
     };
 }
 
-internal sealed unsafe class Binaural : IDisposable
+internal sealed unsafe class HrtfResponseReader : IDisposable
 {
-    public const int Block = 512;
+    private const int Block = Binaural.Block;
     private const string Dll = "phonon";
     private IntPtr context, hrtf;
-    private readonly IntPtr[] effects;
-    private readonly string[] channels;
-    private readonly float[] input = new float[Block], left = new float[Block], right = new float[Block];
+    private IntPtr effect;
 
-    public Binaural(int rate, string[] channels)
+    public HrtfResponseReader(int rate)
     {
-        this.channels = channels;
-        effects = new IntPtr[channels.Length];
         try
         {
             var configuration = new ContextSettings { Version = 0x040801, Simd = 3 };
@@ -48,9 +44,7 @@ internal sealed unsafe class Binaural : IDisposable
             var audio = new AudioSettings { Rate = rate, Frames = Block };
             var profile = new HrtfSettings { Volume = 1 };
             Check(iplHRTFCreate(context, ref audio, ref profile, out hrtf));
-            for (int i = 0; i < channels.Length; i++)
-                if (channels[i] != "LFE")
-                    Check(iplBinauralEffectCreate(context, ref audio, ref hrtf, out effects[i]));
+            Check(iplBinauralEffectCreate(context, ref audio, ref hrtf, out effect));
         }
         catch
         {
@@ -59,50 +53,58 @@ internal sealed unsafe class Binaural : IDisposable
         }
     }
 
-    public void Render(double[] source, double[] stereo)
+    public ImpulseResponse Read(double degrees)
     {
-        Array.Clear(stereo);
-        float gain = channels.Length > 2 ? .5f : .7071f;
+        var input = new float[Block];
+        var left = new float[Block];
+        var right = new float[Block];
+        input[0] = 1;
+        var responseLeft = new List<double>();
+        var responseRight = new List<double>();
         fixed (float* mono = input, l = left, r = right)
         {
             float** inputPointers = stackalloc float*[1] { mono };
             float** outputPointers = stackalloc float*[2] { l, r };
-            var sourceBuffer = new Buffer { Channels = 1, Frames = Block, Data = inputPointers };
-            var stereoBuffer = new Buffer { Channels = 2, Frames = Block, Data = outputPointers };
-            for (int channel = 0; channel < channels.Length; channel++)
+            var source = new Buffer { Channels = 1, Frames = Block, Data = inputPointers };
+            var stereo = new Buffer { Channels = 2, Frames = Block, Data = outputPointers };
+            double angle = degrees * Math.PI / 180;
+            var settings = new EffectParameters
             {
-                for (int i = 0; i < Block; i++)
-                    input[i] = (float)source[i * channels.Length + channel];
-                if (effects[channel] == IntPtr.Zero)
+                X = (float)Math.Sin(angle), Z = -(float)Math.Cos(angle),
+                Interpolation = 1, Blend = 1, Hrtf = hrtf
+            };
+            iplBinauralEffectApply(effect, ref settings, ref source, ref stereo);
+            for (int i = 0; i < Block; i++)
+            {
+                responseLeft.Add(left[i]);
+                responseRight.Add(right[i]);
+            }
+            int tail = iplBinauralEffectGetTailSize(effect);
+            if (tail > 16384)
+                throw new InvalidOperationException("Unexpectedly long binaural impulse response.");
+            while (tail > 0)
+            {
+                iplBinauralEffectGetTail(effect, ref stereo);
+                int frames = Math.Min(tail, Block);
+                for (int i = 0; i < frames; i++)
                 {
-                    for (int i = 0; i < Block; i++)
-                    {
-                        stereo[i * 2] += input[i] * .25f;
-                        stereo[i * 2 + 1] += input[i] * .25f;
-                    }
-                    continue;
+                    responseLeft.Add(left[i]);
+                    responseRight.Add(right[i]);
                 }
-                double angle = Speakers.Angle(channels[channel]) * Math.PI / 180;
-                var settings = new EffectParameters
-                {
-                    X = (float)Math.Sin(angle), Z = -(float)Math.Cos(angle),
-                    Interpolation = 1, Blend = 1, Hrtf = hrtf
-                };
-                iplBinauralEffectApply(effects[channel], ref settings, ref sourceBuffer, ref stereoBuffer);
-                for (int i = 0; i < Block; i++)
-                {
-                    stereo[i * 2] += left[i] * gain;
-                    stereo[i * 2 + 1] += right[i] * gain;
-                }
+                tail -= frames;
             }
         }
+        if (!responseLeft.All(double.IsFinite) || !responseRight.All(double.IsFinite) ||
+            !responseLeft.Any(sample => Math.Abs(sample) > 1e-8) ||
+            !responseRight.Any(sample => Math.Abs(sample) > 1e-8))
+            throw new InvalidOperationException("Steam Audio did not return a usable binaural impulse response.");
+        return new(responseLeft.ToArray(), responseRight.ToArray());
     }
 
     public void Dispose()
     {
-        for (int i = 0; i < effects.Length; i++)
-            if (effects[i] != IntPtr.Zero)
-                iplBinauralEffectRelease(ref effects[i]);
+        if (effect != IntPtr.Zero)
+            iplBinauralEffectRelease(ref effect);
         if (hrtf != IntPtr.Zero)
             iplHRTFRelease(ref hrtf);
         if (context != IntPtr.Zero)
@@ -139,4 +141,54 @@ internal sealed unsafe class Binaural : IDisposable
     private static extern int iplBinauralEffectApply(IntPtr effect, ref EffectParameters settings, ref Buffer input, ref Buffer output);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void iplBinauralEffectRelease(ref IntPtr effect);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int iplBinauralEffectGetTailSize(IntPtr effect);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int iplBinauralEffectGetTail(IntPtr effect, ref Buffer output);
+
+}
+
+internal sealed class Binaural
+{
+    public const int Block = 512;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Rate, double Angle), ImpulseResponse> Responses = new();
+    private readonly StereoConvolution?[] filters;
+    private readonly double[] scratch = new double[Block * 2];
+    private readonly double gain;
+
+    public Binaural(int rate, string[] channels)
+    {
+        filters = channels.Select(channel => channel == "LFE" ? null : new StereoConvolution(
+            Responses.GetOrAdd((rate, Speakers.Angle(channel)), static key =>
+            {
+                using var reader = new HrtfResponseReader(key.Rate);
+                return reader.Read(key.Angle);
+            }))).ToArray();
+        gain = channels.Length > 2 ? .5 : .7071;
+    }
+
+    public void Render(double[] source, double[] stereo)
+    {
+        Array.Clear(stereo);
+        for (int channel = 0; channel < filters.Length; channel++)
+        {
+            var filter = filters[channel];
+            if (filter is null)
+            {
+                for (int frame = 0; frame < Block; frame++)
+                {
+                    double bass = source[frame * filters.Length + channel] * .25;
+                    stereo[frame * 2] += bass;
+                    stereo[frame * 2 + 1] += bass;
+                }
+                continue;
+            }
+            for (int frame = 0; frame < Block; frame++)
+                scratch[frame * 2] = scratch[frame * 2 + 1] = source[frame * filters.Length + channel];
+            filter.Apply(scratch, Block);
+            for (int sample = 0; sample < stereo.Length; sample++)
+                stereo[sample] += scratch[sample] * gain;
+        }
+    }
+
 }

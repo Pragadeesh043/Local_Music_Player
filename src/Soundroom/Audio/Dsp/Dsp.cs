@@ -113,12 +113,13 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
     private DspSettings? active, previous;
     private StereoFilters? filters, oldFilters;
     private int fadeRemaining;
+    private bool limiting;
     private double smoothedVolume = -1;
     private readonly int fadeFrames = Math.Max(1, rate / 100);
     private readonly StereoConvolution? fir = impulse is null ? null : new(impulse);
     private readonly TruePeakProcessor limiter = new(rate);
 
-    public void Apply(double[] samples, int frames, DspSettings settings, double volume, Track track)
+    public void Apply(double[] samples, int frames, DspSettings settings, double volume, double normalizationDb)
     {
         if (!ReferenceEquals(active, settings))
         {
@@ -128,7 +129,7 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
             active = settings;
             fadeRemaining = previous is null ? 0 : fadeFrames;
         }
-        double targetVolume = volume * Math.Pow(10, settings.Enabled ? settings.NormalizationGain(track) / 20 : 0);
+        double targetVolume = volume * Math.Pow(10, normalizationDb / 20);
         if (smoothedVolume < 0)
             smoothedVolume = targetVolume;
         for (int i = 0; i < frames * 2; i += 2)
@@ -148,9 +149,12 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
         if (settings.Enabled)
         {
             fir?.Apply(samples, frames);
-            if (settings.Limiter)
-                limiter.Limit(samples, frames, settings.Headroom);
         }
+        if (settings.Enabled && settings.Limiter)
+            limiter.Limit(samples, frames, settings.Headroom);
+        else if (limiting)
+            limiter.ResetLimiter();
+        limiting = settings.Enabled && settings.Limiter;
     }
 
     private sealed class StereoFilters(int rate, DspSettings settings)

@@ -12,6 +12,8 @@ public sealed partial class MainWindow
 {
     private readonly Polyline waveformLine = new() { StrokeThickness = 1.5 };
     private readonly Polyline spectrumLine = new() { StrokeThickness = 1.5 };
+    private readonly Polyline phaseLine = new() { StrokeThickness = 1.1 };
+    private readonly Line phaseHorizontal = new(), phaseVertical = new();
     private readonly Polyline eqLine = new() { StrokeThickness = 2 };
     private readonly Polyline rightEqLine = new() { StrokeThickness = 1.5 };
     private readonly Complex[] fft = new Complex[Binaural.Block];
@@ -86,6 +88,8 @@ public sealed partial class MainWindow
         spectrumLine.Points.Clear();
         InspectLabel.Text = source.Length > 0 ? source[Math.Clamp(channel, 0, source.Length - 1)] : "";
         LiveStats.Text = "";
+        PhaseScopePanel.Visibility = Visibility.Collapsed;
+        phaseLine.Points.Clear();
     }
 
     private void AddMeter(StackPanel panel, List<ProgressBar> meters, string name, Action? select = null)
@@ -123,6 +127,7 @@ public sealed partial class MainWindow
 
     private void DrawSignal(Signal signal)
     {
+        DrawPhaseScope(signal.Phase);
         UpdateMeters(sourceBars, signal.Source);
         UpdateMeters(outputBars, signal.Output);
         for (int i = 0; i < speakers.Count && i < signal.Source.Length; i++)
@@ -159,6 +164,23 @@ public sealed partial class MainWindow
         });
     }
 
+    private void DrawPhaseScope(PhasePoint[]? data)
+    {
+        PhaseScopePanel.Visibility = data is null ? Visibility.Collapsed : Visibility.Visible;
+        if (data is null)
+            return;
+        double x = PhaseScope.ActualWidth / 2, y = PhaseScope.ActualHeight / 2;
+        double scale = Math.Min(x, y) * .94;
+        phaseHorizontal.X1 = x - scale; phaseHorizontal.X2 = x + scale;
+        phaseHorizontal.Y1 = phaseHorizontal.Y2 = y;
+        phaseVertical.X1 = phaseVertical.X2 = x;
+        phaseVertical.Y1 = y - scale; phaseVertical.Y2 = y + scale;
+        var points = new PointCollection();
+        foreach (var point in data)
+            points.Add(new Point(x + scale * Math.Clamp(point.Side, -1, 1), y - scale * Math.Clamp(point.Mid, -1, 1)));
+        phaseLine.Points = points;
+    }
+
     private static PointCollection Points(int count, Canvas canvas, Func<int, double> y)
     {
         var points = new PointCollection();
@@ -167,18 +189,31 @@ public sealed partial class MainWindow
         return points;
     }
 
-    private void BuildDsp()
+    private bool dspControlsBuilt;
+
+    private void BuildAnalyzerCharts()
     {
         waveformLine.Stroke = accent;
         spectrumLine.Stroke = accent;
-        eqLine.Stroke = accent;
-        rightEqLine.Stroke = neutral;
+        phaseLine.Stroke = accent;
+        phaseHorizontal.Stroke = phaseVertical.Stroke = neutral;
+        phaseHorizontal.Opacity = phaseVertical.Opacity = .35;
+        PhaseScope.Children.Add(phaseHorizontal);
+        PhaseScope.Children.Add(phaseVertical);
+        PhaseScope.Children.Add(phaseLine);
         WaveCanvas.Children.Add(waveformLine);
         SpectrumCanvas.Children.Add(spectrumLine);
-        EqChart.Children.Add(eqLine);
-        EqChart.Children.Add(rightEqLine);
         ToolTipService.SetToolTip(WaveCanvas, "Source waveform");
         ToolTipService.SetToolTip(SpectrumCanvas, "Source spectrum");
+    }
+
+    private void BuildDsp()
+    {
+        updatingDsp = true;
+        eqLine.Stroke = accent;
+        rightEqLine.Stroke = neutral;
+        EqChart.Children.Add(eqLine);
+        EqChart.Children.Add(rightEqLine);
         preamp = AddSlider(DspPanel, "Preamp (dB)", -24, 6, 0);
         bass = AddSlider(DspPanel, "Bass shelf (dB)", -12, 12, 0);
         width = AddSlider(DspPanel, "Stereo width (%)", 0, 200, 100);
@@ -204,8 +239,6 @@ public sealed partial class MainWindow
         peq.Children.Add(bandPanel);
         DspPanel.Children.Add(new Expander { Header = "Parametric EQ · up to 64 bands", Content = peq,
             HorizontalAlignment = HorizontalAlignment.Stretch });
-        foreach (var band in dsp.Parametric)
-            AddBand(band);
         var graphicPanel = new StackPanel { Spacing = 5 };
         for (int i = 0; i < graphics.Length; i++)
             graphics[i] = AddSlider(graphicPanel, $"{DspSettings.Centers[i]} Hz (dB)", -12, 12, 0);
@@ -240,6 +273,8 @@ public sealed partial class MainWindow
                 LoadDsp(saved);
         };
         DspEnabled.Toggled += (_, _) => UpdateDsp();
+        dspControlsBuilt = true;
+        LoadDsp(dsp);
     }
 
     private CheckBox AddCheck(Panel panel, string label)
@@ -335,6 +370,8 @@ public sealed partial class MainWindow
 
     private void DrawEq()
     {
+        if (!dspControlsBuilt)
+            return;
         int rate = playback?.WaveFormat.SampleRate ?? 48000;
         void Draw(Polyline line, EqChannel channel)
         {
@@ -377,8 +414,10 @@ public sealed partial class MainWindow
     private void LoadDsp(DspSettings preset)
     {
         string? previousImpulse = dsp.ImpulsePath;
-        updatingDsp = true;
         dsp = preset;
+        if (!dspControlsBuilt)
+            return;
+        updatingDsp = true;
         DspEnabled.IsOn = preset.Enabled;
         preamp.Value = preset.Preamp;
         bass.Value = preset.Bass;

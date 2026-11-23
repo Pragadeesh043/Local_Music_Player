@@ -17,6 +17,11 @@ internal sealed class AsioDsdOut(string name, IntPtr window) : IWavePlayer
     public event EventHandler<StoppedEventArgs>? PlaybackStopped;
     public PlaybackState PlaybackState => state;
     public WaveFormat OutputWaveFormat => provider?.WaveFormat ?? throw new InvalidOperationException("The driver is not initialized.");
+    internal double? DriverSampleRate()
+    {
+        double? rate = driver?.Driver.GetSampleRate();
+        return rate is > 0 && double.IsFinite(rate.Value) ? rate : null;
+    }
     public float Volume
     {
         get => 1;

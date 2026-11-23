@@ -45,7 +45,9 @@ public sealed partial class MainWindow
         await CheckMusicFolders();
     }
 
-    private bool IsSourceOnline(Track item) => item.SourceId is null || mountedSources.ContainsKey(item.SourceId);
+    private Track WithMountedPath(Track item) =>
+        item is { SourceId: { } id, RelativePath: { } path } && mountedSources.TryGetValue(id, out var folder)
+            ? item with { Path = Path.Combine(folder, path) } : item;
 
     private Track ResolvePlaybackTrack(Track item)
     {
@@ -102,13 +104,8 @@ public sealed partial class MainWindow
                     }
                     mountedSources[source.Id] = root;
                     dirtySources[source.Id] = 0;
-                    for (int i = 0; i < tracks.Count; i++)
-                        if (tracks[i] is { RelativePath: { } relative } item && item.SourceId == source.Id)
-                        {
-                            tracks[i] = item with { Path = Path.Combine(root, relative) };
-                            if (track?.Key == item.Key)
-                                track = tracks[i];
-                        }
+                    if (track?.SourceId == source.Id)
+                        track = WithMountedPath(track);
                     try { watchers[source.Id] = Watch(source.Id, root); }
                     catch (Exception error) { ShowError($"Watching {source.Name}", error); }
                 }
@@ -141,7 +138,21 @@ public sealed partial class MainWindow
 
     private async Task RunSourceScan(MusicSource source, string root)
     {
-        try { await ScanMusicFolder(source, root); }
+        try
+        {
+            if (!string.Equals(library.Get<string>("mount:" + source.Id), root, StringComparison.OrdinalIgnoreCase))
+            {
+                var cancellation = libraryLifetime.Token;
+                await Task.Run(() => library.RebaseSource(source.Id, root, cancellation), cancellation);
+                if (!ScanStillMounted(source, root))
+                    return;
+                library.Put("mount:" + source.Id, root);
+                RefreshGroups();
+                RefreshLibrary();
+            }
+            await ScanMusicFolder(source, root);
+        }
+        catch (OperationCanceledException) when (libraryLifetime.IsCancellationRequested) { }
         catch (Exception error) { ShowError($"Scanning {source.Name}", error); }
         finally { scanningSources = false; }
     }
@@ -167,8 +178,12 @@ public sealed partial class MainWindow
     {
         var old = new Dictionary<string, FileStamp>(
             library.Get<Dictionary<string, FileStamp>>("scan:" + source.Id) ?? [], StringComparer.OrdinalIgnoreCase);
+        var cancellation = libraryLifetime.Token;
+        bool NeedsPlaybackBuffer() => Volatile.Read(ref playback)?.NeedsScanBackpressure == true;
+        Task WaitForPlayback() => SourceScanner.WaitForPlaybackAsync(NeedsPlaybackBuffer, cancellation);
         var inaccessible = new List<string>();
-        var snapshot = await Task.Run(() => SourceScanner.Snapshot(root, inaccessible));
+        var snapshot = await Task.Run(() => SourceScanner.Snapshot(root, inaccessible,
+            () => WaitForPlayback().GetAwaiter().GetResult()), cancellation);
         if (!ScanStillMounted(source, root))
             return;
         var changed = snapshot.Where(file => !old.TryGetValue(file.Key, out var stamp) || stamp != file.Value).ToArray();
@@ -178,12 +193,9 @@ public sealed partial class MainWindow
             return;
         Status.Text = $"Indexing {source.Name}…";
         int failures = 0;
-        var indexed = tracks.Where(item => item.SourceId == source.Id && item.IndexFile is not null)
-            .ToLookup(item => item.IndexFile!, StringComparer.OrdinalIgnoreCase);
-        var legacy = tracks.Where(item => item.SourceId is null)
-            .ToLookup(item => item.Path, StringComparer.OrdinalIgnoreCase);
         foreach (var file in changed.OrderBy(file => !file.Key.EndsWith(".cue", StringComparison.OrdinalIgnoreCase)))
         {
+            await WaitForPlayback();
             if (!ScanStillMounted(source, root))
                 return;
             try
@@ -197,13 +209,14 @@ public sealed partial class MainWindow
                 {
                     SourceId = source.Id, IndexFile = file.Key, RelativePath = Path.GetRelativePath(root, item.Path)
                 }).ToArray();
+                var indexed = library.IndexedFile(source.Id, file.Key);
                 foreach (var item in current)
                 {
-                    var prior = indexed[file.Key].FirstOrDefault(t => t.Key == item.Key) ??
-                        legacy[item.Path].FirstOrDefault(t => t.CueIndex == item.CueIndex);
+                    var prior = indexed.FirstOrDefault(t => t.Key == item.Key) ??
+                        library.LegacyTrack(item.Path, item.CueIndex);
                     SaveTrack(prior is null ? item : item with { Rating = prior.Rating, PlayCount = prior.PlayCount });
                 }
-                foreach (var item in indexed[file.Key].Where(item => !current.Any(now => now.Key == item.Key)))
+                foreach (var item in indexed.Where(item => !current.Any(now => now.Key == item.Key)))
                     SaveTrack(item with { Missing = true });
                 old[file.Key] = file.Value;
             }
@@ -217,7 +230,10 @@ public sealed partial class MainWindow
             return;
         foreach (string file in deleted)
         {
-            foreach (var item in indexed[file])
+            await WaitForPlayback();
+            if (!ScanStillMounted(source, root))
+                return;
+            foreach (var item in library.IndexedFile(source.Id, file))
                 SaveTrack(item with { Missing = true });
             old.Remove(file);
         }

@@ -8,7 +8,8 @@ namespace Soundroom;
 internal enum VolumeMode { Digital, Fixed, Hardware }
 internal sealed record OutputProfile(Route Route, VolumeMode VolumeMode = VolumeMode.Digital, double Volume = 75,
     bool Memory = false, int TargetRate = 0, int OutputBits = 24, bool Sharper = false,
-    bool DopConfirmed = false, DspSettings? Dsp = null, bool MinimumPhase = false, string? AsioDriver = null);
+    bool DopConfirmed = false, DspSettings? Dsp = null, bool MinimumPhase = false, string? AsioDriver = null,
+    int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB);
 
 public sealed partial class MainWindow
 {
@@ -112,50 +113,6 @@ public sealed partial class MainWindow
             ShowSignalPath(playback);
     }
 
-    private void ShowSignalPath(Playback session)
-    {
-        if (track is null || Devices.SelectedItem is not OutputDevice device)
-            return;
-        if (SelectedRoute == Route.NativeDsd)
-        {
-            SignalPath.Text = $"{track.Summary} → 1-bit native DSD · DSP bypass → ASIO → {outputProfile.AsioDriver}";
-            return;
-        }
-        bool processed = SelectedRoute is Route.Binaural or Route.Downmix or Route.ExclusiveDsp;
-        string stages = RoutesText();
-        if (processed)
-        {
-            var active = new List<string>();
-            if (track.Rate != session.WaveFormat.SampleRate)
-                active.Add(outputProfile.MinimumPhase ? "Minimum-phase SRC" : "Linear-phase SRC");
-            if (dsp.Enabled)
-            {
-                if (dsp.Normalization != LoudnessMode.Off)
-                    active.Add($"{dsp.NormalizationGain(track):+0.0;-0.0;0} dB normalization");
-                if (dsp.Parametric.Any(b => b.Active && (b.Gain != 0 || b.Shape is not FilterShape.Peak)) ||
-                    dsp.Graphic.Any(g => g != 0) || dsp.Bass != 0)
-                    active.Add("EQ");
-                if (dsp.ImpulsePath is not null) active.Add("FIR");
-                if (dsp.Crossfeed != 0) active.Add("crossfeed");
-                if (dsp.Invert) active.Add("inverted polarity");
-                if (dsp.Balance != 0 || dsp.Width != 100) active.Add("stereo controls");
-                if (dsp.Limiter) active.Add("limiter");
-                if (dsp.Preamp != 0) active.Add($"{dsp.Preamp:+0.0;-0.0;0} dB preamp");
-                if (SelectedRoute == Route.ExclusiveDsp && dsp.Dither != DitherMode.Off) active.Add(dsp.Dither.ToString());
-            }
-            active.Add(outputProfile.VolumeMode == VolumeMode.Digital ? $"{Volume.Value:0}% digital volume" : "fixed digital gain");
-            stages += $" → {string.Join(" → ", active)}";
-        }
-        string format = $"{session.WaveFormat.Channels} ch · {session.OutputBits}-bit " +
-            $"{(session.IsExclusive ? "PCM" : "float")} · {session.WaveFormat.SampleRate / 1000.0:0.###} kHz";
-        if (session.IsExclusive && session.WaveFormat.BitsPerSample != session.OutputBits)
-            format += $" ({session.WaveFormat.BitsPerSample}-bit container)";
-        SignalPath.Text = $"{track.Summary} → {stages} → {format}\n" +
-            (session.IsExclusive
-                ? $"WASAPI exclusive → {device.Name}"
-                : $"WASAPI shared → Windows mix {device.Rate / 1000.0:0.###} kHz / {device.MixBits}-bit / {device.Channels} ch → {device.Name}");
-    }
-
     private async void ShowOutputSettings(object sender, RoutedEventArgs args) =>
         await RunUiAction("Updating the output profile", ShowOutputSettingsAsync);
 
@@ -164,7 +121,17 @@ public sealed partial class MainWindow
         if (Devices.SelectedItem is not OutputDevice device)
             return;
         var controls = new StackPanel { Spacing = 10 };
-        var memory = new CheckBox { Content = "Decode each track to RAM (up to 256 MiB per track)", IsChecked = outputProfile.Memory };
+        var memory = new CheckBox { Content = "Decode tracks to RAM", IsChecked = outputProfile.Memory };
+        var memoryLimit = new NumberBox
+        {
+            Header = "Total RAM playback limit (MiB)", Value = Math.Clamp(outputProfile.MemoryLimitMiB,
+                RamPlaybackBudget.MinimumLimitMiB, RamPlaybackBudget.MaximumLimitMiB),
+            Minimum = RamPlaybackBudget.MinimumLimitMiB, Maximum = RamPlaybackBudget.MaximumLimitMiB, SmallChange = 16,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, IsEnabled = outputProfile.Memory
+        };
+        ToolTipService.SetToolTip(memoryLimit, "The current and next track share this limit. A track streams from its source if it does not fit.");
+        memory.Checked += (_, _) => memoryLimit.IsEnabled = true;
+        memory.Unchecked += (_, _) => memoryLimit.IsEnabled = false;
         var sharper = new CheckBox { Content = "Steeper resampling filter", IsChecked = outputProfile.Sharper };
         var phase = new ComboBox { Header = "Resampler phase", ItemsSource = new[] { "Linear", "Minimum" },
             SelectedIndex = outputProfile.MinimumPhase ? 1 : 0 };
@@ -181,15 +148,16 @@ public sealed partial class MainWindow
         int[] depths = [16, 24, 32];
         var bits = new ComboBox { Header = "Exclusive DSP PCM depth", ItemsSource = depths.Select(value => $"{value} bit").ToArray(),
             SelectedIndex = Math.Max(0, Array.IndexOf(depths, outputProfile.OutputBits)) };
-        foreach (var control in new FrameworkElement[] { modes, rates, bits, phase, memory, sharper, dop, asio })
+        foreach (var control in new FrameworkElement[] { modes, rates, bits, phase, memory, memoryLimit, sharper, dop, asio })
             controls.Children.Add(control);
-        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "Output profile", Content = controls,
+        var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = "Output profile", Content = new ScrollViewer { Content = controls },
             PrimaryButtonText = "Save for this device", CloseButtonText = "Cancel" };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || (Devices.SelectedItem as OutputDevice)?.Id != device.Id)
             return;
         var updated = new OutputProfile(SelectedRoute, (VolumeMode)modes.SelectedIndex, Volume.Value, memory.IsChecked == true,
             values[rates.SelectedIndex], depths[bits.SelectedIndex], sharper.IsChecked == true,
-            dop.IsChecked == true, dsp, phase.SelectedIndex == 1, asio.SelectedIndex > 0 ? (string)asio.SelectedItem : null);
+            dop.IsChecked == true, dsp, phase.SelectedIndex == 1, asio.SelectedIndex > 0 ? (string)asio.SelectedItem : null,
+            (int)Math.Round(Value(memoryLimit, RamPlaybackBudget.DefaultLimitMiB)));
         library.Put("output:" + device.Id, updated);
         outputProfile = updated;
         RefreshVolumeMode();

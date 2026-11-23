@@ -8,6 +8,7 @@ internal sealed class AudioBuffer(int capacity, int blockBytes)
         public byte[] Data { get; } = new byte[size];
         public int Length;
         public Signal? Signal;
+        public ProcessingSnapshot? Processing;
         public List<(Track Track, long Frame)> Transitions { get; } = [];
     }
 
@@ -21,6 +22,7 @@ internal sealed class AudioBuffer(int capacity, int blockBytes)
     }
 
     public int Queued => (int)(Volatile.Read(ref writeIndex) - Volatile.Read(ref readIndex));
+    public bool BelowScanReserve => Queued < capacity / 2;
     public void Publish() => Volatile.Write(ref writeIndex, writeIndex + 1);
 
     public Block? Readable()

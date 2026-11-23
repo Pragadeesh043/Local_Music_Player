@@ -21,8 +21,6 @@ namespace Soundroom;
 public sealed partial class MainWindow : Window
 {
     private readonly Library library = new();
-    private readonly List<Track> tracks;
-    private readonly Dictionary<string, int> trackIndices = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(45) };
     private readonly DispatcherTimer seekTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private Track? track;
@@ -54,12 +52,13 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.ButtonBackgroundColor = AppWindow.TitleBar.BackgroundColor;
         AppWindow.TitleBar.ForegroundColor = Colors.White;
         AppWindow.TitleBar.ButtonForegroundColor = Colors.White;
-        tracks = library.Tracks();
-        for (int i = 0; i < tracks.Count; i++)
-            trackIndices[tracks[i].Key] = i;
         LibraryView.SelectedIndex = 0;
-        RefreshLibrary();
-        BuildDsp();
+        BuildAnalyzerCharts();
+        InspectorTabs.SelectionChanged += (_, _) =>
+        {
+            if (ReferenceEquals(InspectorTabs.SelectedItem, DspTab) && !dspControlsBuilt)
+                BuildDsp();
+        };
         string? deviceError = null;
         try { Devices.ItemsSource = Playback.Devices(); }
         catch (Exception error)
@@ -98,7 +97,7 @@ public sealed partial class MainWindow : Window
         ready = true;
         deviceTimer.Tick += (_, _) => RefreshDevices();
         deviceTimer.Start();
-        StartSourceMonitoring();
+        _ = InitializeLibraryAsync();
         Status.Text = deviceError ?? (Devices.Items.Count > 0 ? "" : "Windows reports no active audio output.");
     }
 
@@ -117,19 +116,10 @@ public sealed partial class MainWindow : Window
 
     private void SeekTimerStart() { seekTimer.Stop(); if (!updatingSeek) seekTimer.Start(); }
 
-    private void RefreshLibrary()
-    {
-        var query = Search.Text.Trim();
-        var visible = FilterTracks(query).ToList();
-        TrackList.ItemsSource = visible;
-        TrackList.SelectedItem = track;
-        LibraryCount.Text = $"{visible.Count} {(visible.Count == 1 ? "track" : "tracks")}";
-    }
-
     private void SearchChanged(object sender, TextChangedEventArgs args)
     {
         if (ready)
-            RefreshLibrary();
+            RefreshLibrary(reset: true, debounce: true);
     }
 
     private async void AddFiles(object sender, RoutedEventArgs args)
@@ -150,6 +140,11 @@ public sealed partial class MainWindow : Window
 
     private async void AddFolder(object sender, RoutedEventArgs args)
     {
+        if (!catalogReady)
+        {
+            Status.Text = "The library index is still opening.";
+            return;
+        }
         if (importing)
             return;
         try
@@ -191,7 +186,7 @@ public sealed partial class MainWindow : Window
                     {
                         if (item.CueIndex > 0)
                             cueSources.Add(item.Path);
-                        var prior = tracks.FirstOrDefault(t => t.Key.Equals(item.Key, StringComparison.OrdinalIgnoreCase));
+                        var prior = library.FindTrack(item.Key);
                         SaveTrack(prior is null ? item : item with
                         {
                             Rating = prior.Rating, PlayCount = prior.PlayCount, Analysis = prior.Analysis
@@ -223,7 +218,7 @@ public sealed partial class MainWindow : Window
     private void DisplayTrack(Track selected)
     {
         track = selected;
-        TrackList.SelectedItem = track;
+        RefreshTrackSelection();
         TrackTitle.Text = track.Title;
         TrackSubtitle.Text = track.Subtitle;
         TrackFormat.Text = track.Summary;
@@ -321,8 +316,9 @@ public sealed partial class MainWindow : Window
             var settings = dsp;
             float volume = DigitalVolume();
             var options = new PlaybackOptions(outputProfile.Memory, outputProfile.TargetRate, outputProfile.OutputBits,
-                outputProfile.Sharper, Following(selected), settings.ImpulsePath, outputProfile.MinimumPhase,
-                outputProfile.AsioDriver, preparation.Token);
+                outputProfile.Sharper, ImpulsePath: settings.ImpulsePath, MinimumPhase: outputProfile.MinimumPhase,
+                AsioDriver: outputProfile.AsioDriver, Preparation: preparation.Token, NextTrack: CreatePlaybackQueue(),
+                MemoryLimitMiB: outputProfile.MemoryLimitMiB);
             Status.Text = options.Memory ? "Decoding track to RAM…" : "Opening audio stream…";
             var session = await Task.Run(() => new Playback(selected, device, route, seconds, settings, volume, options));
             if (request != generation || !ready)
@@ -375,7 +371,6 @@ public sealed partial class MainWindow : Window
             if (request != generation || !ready)
                 return;
             Stop();
-            SignalPath.Text = "";
             SetMeters(Speakers.From(selected), []);
             ShowError($"Playing {selected.Title}", error);
         }
@@ -387,22 +382,12 @@ public sealed partial class MainWindow : Window
         UpdatePlayIcon();
     }
 
-    private string RoutesText() => SelectedRoute switch
-    {
-        Route.Binaural => "HRTF",
-        Route.Cable => "external processing",
-        Route.Exclusive => "integer PCM · DSP bypass · fixed gain",
-        Route.ExclusiveDsp => "64-bit DSP · integer output",
-        Route.Dop => "DoP · fixed gain · DSP bypass",
-        Route.NativeDsd => "native DSD · fixed gain · DSP bypass",
-        _ => "stereo downmix"
-    };
-
     private void Stop()
     {
         var session = playback;
         playback = null;
         session?.Dispose();
+        ClearSignalPath();
         UpdatePlayIcon();
     }
 
@@ -431,7 +416,7 @@ public sealed partial class MainWindow : Window
             if (playback?.State == PlaybackState.Playing) playback.Pause();
             else if (playback is not null) playback.Play();
             else if (track is not null) Start(Seek.Value >= track.Duration ? 0 : Seek.Value);
-            else if (tracks.FirstOrDefault() is { } first) SelectTrack(first);
+            else if (visibleTracks.FirstOrDefault() is { } first) SelectTrack(first);
         }
         catch (Exception error)
         {
@@ -445,12 +430,25 @@ public sealed partial class MainWindow : Window
     private void Next(object sender, RoutedEventArgs args) => Move(1);
     private void Previous(object sender, RoutedEventArgs args) => Move(-1);
 
-    private void Move(int direction)
+    private async void Move(int direction)
     {
-        var list = QueueTracks();
-        int index = track is null ? -1 : Array.FindIndex(list, t => t.Key == track.Key);
-        if (index + direction >= 0 && index + direction < list.Length)
-            SelectTrack(list[index + direction]);
+        if (track is null)
+        {
+            if (direction > 0 && visibleTracks.FirstOrDefault() is { } first)
+                SelectTrack(first);
+            return;
+        }
+        int request = ++moveRevision;
+        int currentGeneration = generation;
+        var query = CurrentLibraryQuery();
+        var key = track.Key;
+        await RunUiAction("Finding the next track", async () =>
+        {
+            var selected = await Task.Run(() =>
+                library.Neighbors(query, key, direction < 0, 1).FirstOrDefault());
+            if (ready && request == moveRevision && currentGeneration == generation && selected is not null)
+                SelectTrack(WithMountedPath(selected));
+        });
     }
 
     private void VolumeChanged(object sender, RangeBaseValueChangedEventArgs args)
@@ -465,6 +463,7 @@ public sealed partial class MainWindow : Window
         if (playback is null || track is null)
             return;
         SyncTrack(playback);
+        ShowSignalPath(playback);
         if (playback.Underruns > 0 && Status.Text.Length == 0)
             Status.Text = "Audio buffer ran low during playback.";
         double position = Math.Clamp(playback.Position, 0, Seek.Maximum);

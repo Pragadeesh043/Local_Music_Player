@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -9,9 +10,11 @@ internal sealed record OutputDevice(string Id, string Name, int Rate, int Channe
 {
     public override string ToString() => Name;
 }
-internal sealed record Meter(float Peak, float Rms, long Clips);
+internal readonly record struct Meter(float Peak, float Rms, long Clips);
 internal sealed record Signal(Meter[] Source, Meter[] Output, float[] Waveform, int WaveChannel,
-    double? TruePeak = null, double? Lufs = null, double? Correlation = null);
+    double? TruePeak = null, double? Lufs = null, double? Correlation = null, PhasePoint[]? Phase = null);
+internal sealed record ProcessingControls(DspSettings Dsp, float DigitalVolume);
+internal sealed record ProcessingSnapshot(ProcessingControls Controls, double NormalizationDb);
 
 internal sealed class Playback : IWaveProvider, IDisposable
 {
@@ -29,11 +32,14 @@ internal sealed class Playback : IWaveProvider, IDisposable
     private readonly bool exclusive;
     private readonly string? asioDriver;
     private readonly LiveAnalysis? live;
-    private readonly long[] sourceClips, outputClips;
+    private readonly ChannelMeter[] sourceMeters, outputMeters;
+    private int measuredFrames;
+    private readonly int meterInterval;
+    private double intervalPeak;
     private int remaining, bufferedOffset;
     private int waveChannel;
-    private DspSettings settings;
-    private float volume;
+    private ProcessingControls controls;
+    private ProcessingSnapshot? producedProcessing, deliveredProcessing;
     private Signal? signal;
     private bool disposed;
     private long framesRead;
@@ -55,10 +61,11 @@ internal sealed class Playback : IWaveProvider, IDisposable
     {
         options ??= new();
         this.route = route;
-        this.settings = settings;
-        this.volume = volume;
+        controls = new(settings, volume);
         this.offset = offset;
         consumedTrack = track;
+        Device = device;
+        MinimumPhase = options.MinimumPhase;
         asioDriver = route == Route.NativeDsd ? options.AsioDriver ??
             throw new InvalidOperationException("Select a DSD-capable ASIO driver in Output settings.") : null;
         exclusive = route is Route.Exclusive or Route.ExclusiveDsp or Route.Dop or Route.NativeDsd;
@@ -91,7 +98,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
             var request = route == Route.ExclusiveDsp ? track with { Codec = "pcm_s24le", Bits = options.OutputBits, Channels = 2 } : track;
             if (dop)
                 request = track with { Codec = "pcm_s24le", Bits = 24 };
-            direct = DirectFormat.Match(client, request, rate, OutputChannels);
+            direct = DirectFormat.Match(client, request, rate, route == Route.ExclusiveDsp ? ["FL", "FR"] : OutputChannels);
         }
         WaveFormat = direct?.Format ?? (route == Route.Cable
             ? DirectFormat.Extensible(rate, 8, 32, 32, 0x63f, floating: true)
@@ -100,26 +107,19 @@ internal sealed class Playback : IWaveProvider, IDisposable
         input = new byte[Block * (IsRaw ? WaveFormat.BlockAlign : track.Channels * sizeof(double))];
         packed = new byte[Block * WaveFormat.BlockAlign];
         rendered = new double[Block * OutputChannels.Length];
-        sourceClips = new long[track.Channels];
-        outputClips = new long[OutputChannels.Length];
-        dsp = new StereoDsp(rate, options.ImpulsePath is not null && (route is Route.Downmix or Route.Binaural or Route.ExclusiveDsp)
-            ? ImpulseResponse.Load(options.ImpulsePath, rate) : null);
+        sourceMeters = new ChannelMeter[track.Channels];
+        outputMeters = new ChannelMeter[OutputChannels.Length];
+        meterInterval = Math.Max(1, rate / 30);
+        ImpulsePath = IsProcessed ? options.ImpulsePath : null;
+        dsp = new StereoDsp(rate, ImpulsePath is not null ? ImpulseResponse.Load(ImpulsePath, rate) : null);
         if (!dop)
             live = new LiveAnalysis(rate, OutputChannels);
         var resampler = IsRaw ? null : options.ResamplingFilter(rate);
         if (route == Route.Binaural)
             binaural = new Binaural(rate, SourceChannels);
-        try
-        {
-            decoder = new AudioSource(track, offset, rate, IsRaw ? direct!.Encoding : "f64le",
-                resampler, options.Memory, options.Following, route, WaveFormat.BitsPerSample,
-                options.MinimumPhase, options.Sharper, options.Preparation);
-        }
-        catch
-        {
-            binaural?.Dispose();
-            throw;
-        }
+        decoder = new AudioSource(track, offset, rate, IsRaw ? direct!.Encoding : "f64le",
+            resampler, options.Memory, options.Following, route, WaveFormat.BitsPerSample,
+            options.MinimumPhase, options.Sharper, options.Preparation, options.NextTrack, options.MemoryLimitMiB);
     }
 
     public string[] SourceChannels { get; }
@@ -137,9 +137,18 @@ internal sealed class Playback : IWaveProvider, IDisposable
         }
     }
     public int Underruns => Volatile.Read(ref underruns);
+    public bool NeedsScanBackpressure => State == PlaybackState.Playing && Volatile.Read(ref completed) == 0 &&
+        audioBuffer is { BelowScanReserve: true };
     private bool IsRaw => route == Route.Exclusive || dop;
     public int OutputBits => direct?.ValidBits ?? 32;
     public bool IsExclusive => exclusive;
+    internal Route OutputRoute => route;
+    internal OutputDevice Device { get; }
+    internal string? AsioDriver => asioDriver;
+    internal bool MinimumPhase { get; }
+    internal string? ImpulsePath { get; }
+    internal bool IsProcessed => route is Route.Binaural or Route.Downmix or Route.ExclusiveDsp;
+    internal double? ReadAsioSampleRate() => (output as AsioDsdOut)?.DriverSampleRate();
     public event EventHandler<StoppedEventArgs>? Stopped;
 
     public static List<OutputDevice> Devices()
@@ -224,7 +233,22 @@ internal sealed class Playback : IWaveProvider, IDisposable
         output.Play();
     }
     public void Pause() => output?.Pause();
-    public void Update(DspSettings updated, float newVolume) { Volatile.Write(ref settings, updated); Volatile.Write(ref volume, newVolume); }
+    public void Update(DspSettings updated, float newVolume)
+    {
+        var previous = Volatile.Read(ref controls);
+        if (!ReferenceEquals(previous.Dsp, updated) || previous.DigitalVolume != newVolume)
+            Volatile.Write(ref controls, new ProcessingControls(updated, newVolume));
+    }
+
+    internal ProcessingSnapshot ReadProcessing(out bool applied, out bool pending)
+    {
+        var requested = Volatile.Read(ref controls);
+        var delivered = Volatile.Read(ref deliveredProcessing);
+        applied = delivered is not null;
+        pending = delivered is not null && !ReferenceEquals(delivered.Controls, requested);
+        return delivered ?? new ProcessingSnapshot(requested,
+            IsProcessed && requested.Dsp.Enabled ? requested.Dsp.NormalizationGain(CurrentTrack) : 0);
+    }
     public void Inspect(int channel) => Volatile.Write(ref waveChannel, Math.Clamp(channel, 0, SourceChannels.Length - 1));
 
     public int Read(byte[] buffer, int offset, int count)
@@ -246,6 +270,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
         }
         Interlocked.Add(ref framesRead, written / WaveFormat.BlockAlign);
         Volatile.Write(ref signal, producedSignal);
+        Volatile.Write(ref deliveredProcessing, producedProcessing);
         return written;
     }
 
@@ -273,11 +298,12 @@ internal sealed class Playback : IWaveProvider, IDisposable
                     continue;
                 }
                 block.Transitions.Clear();
-                if (!Fill(block.Transitions))
+                if (!Fill(block.Transitions, publishEveryBlock: false))
                     break;
                 Buffer.BlockCopy(IsRaw ? input : packed, 0, block.Data, 0, remaining);
                 block.Length = remaining;
                 block.Signal = producedSignal;
+                block.Processing = producedProcessing;
                 queue.Publish();
                 if (queue.Queued >= startupBlocks)
                     primed.TrySetResult();
@@ -336,6 +362,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 Volatile.Write(ref consumedTrack, transition.Track);
             }
             Volatile.Write(ref signal, block.Signal);
+            Volatile.Write(ref deliveredProcessing, block.Processing);
             if (bufferedPosition == block.Length)
             {
                 bufferedPosition = transitionIndex = 0;
@@ -345,12 +372,19 @@ internal sealed class Playback : IWaveProvider, IDisposable
         return written;
     }
 
-    private bool Fill(List<(Track Track, long Frame)>? transitions = null)
+    private bool Fill(List<(Track Track, long Frame)>? transitions = null, bool publishEveryBlock = true)
     {
         int read = decoder.Read(input, transitions);
         if (read == 0)
             return false;
         int frames = read / (IsRaw ? WaveFormat.BlockAlign : sizeof(double) * SourceChannels.Length);
+        var current = Volatile.Read(ref controls);
+        var currentSettings = current.Dsp;
+        double normalizationDb = IsProcessed && currentSettings.Enabled
+            ? currentSettings.NormalizationGain(decoder.Current) : 0;
+        if (producedProcessing is null || !ReferenceEquals(producedProcessing.Controls, current) ||
+            producedProcessing.NormalizationDb != normalizationDb)
+            producedProcessing = new(current, normalizationDb);
         if (dop)
         {
             remaining = frames * WaveFormat.BlockAlign;
@@ -371,31 +405,40 @@ internal sealed class Playback : IWaveProvider, IDisposable
             binaural.Render(source, rendered);
         else if (!IsRaw)
             Mix(frames);
-        var currentSettings = Volatile.Read(ref settings);
-        if (route is Route.Binaural or Route.Downmix or Route.ExclusiveDsp)
-            dsp.Apply(rendered, frames, currentSettings, Volatile.Read(ref volume), decoder.Current);
+        if (IsProcessed)
+            dsp.Apply(rendered, frames, currentSettings, current.DigitalVolume, normalizationDb);
         if (!IsRaw)
         {
-            int bytes = WaveFormat.BitsPerSample / 8;
-            for (int i = 0; i < frames * OutputChannels.Length; i++)
+            int count = frames * OutputChannels.Length;
+            if (direct is null)
+                PackFloat(rendered.AsSpan(0, count), MemoryMarshal.Cast<byte, float>(packed.AsSpan()));
+            else
             {
-                var target = packed.AsSpan(i * bytes, bytes);
-                if (direct is null)
-                    System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(target, (float)rendered[i]);
-                else
+                int bytes = WaveFormat.BitsPerSample / 8;
+                for (int i = 0; i < count; i++)
+                {
+                    var target = packed.AsSpan(i * bytes, bytes);
                     quantizer.Write(target, rendered[i], direct.ValidBits, currentSettings.Dither, i % 2);
+                }
             }
         }
 
-        int channel = Volatile.Read(ref waveChannel);
-        var waveform = new float[frames];
-        for (int i = 0; i < frames; i++)
-            waveform[i] = (float)source[i * SourceChannels.Length + channel];
+        Accumulate(source, frames, sourceMeters);
+        Accumulate(rendered, frames, outputMeters);
+        measuredFrames += frames;
         var stats = live?.Measure(rendered, frames);
-        producedSignal = new Signal(
-            Measure(source, SourceChannels.Length, frames, sourceClips),
-            Measure(rendered, OutputChannels.Length, frames, outputClips), waveform, channel,
-            stats?.TruePeak, stats?.Lufs, stats?.Correlation);
+        intervalPeak = Math.Max(intervalPeak, stats?.TruePeak ?? 0);
+        if (publishEveryBlock || producedSignal is null || measuredFrames >= meterInterval || read < input.Length)
+        {
+            int channel = Volatile.Read(ref waveChannel);
+            var waveform = new float[frames];
+            for (int i = 0; i < frames; i++)
+                waveform[i] = (float)source[i * SourceChannels.Length + channel];
+            producedSignal = new Signal(Snapshot(sourceMeters, measuredFrames), Snapshot(outputMeters, measuredFrames),
+                waveform, channel, stats.HasValue ? intervalPeak : null, stats?.Lufs, stats?.Correlation, live?.Scope(rendered, frames));
+            measuredFrames = 0;
+            intervalPeak = 0;
+        }
         remaining = frames * WaveFormat.BlockAlign;
         bufferedOffset = 0;
         return remaining != 0;
@@ -433,24 +476,54 @@ internal sealed class Playback : IWaveProvider, IDisposable
         }
     }
 
-    private static Meter[] Measure(double[] data, int channels, int frames, long[] clips)
+    private static void PackFloat(ReadOnlySpan<double> input, Span<float> output)
     {
-        var meters = new Meter[channels];
-        for (int channel = 0; channel < channels; channel++)
+        int index = 0;
+        if (Vector.IsHardwareAccelerated)
         {
-            float peak = 0;
-            double sum = 0;
+            int half = Vector<double>.Count;
+            for (; index <= input.Length - Vector<float>.Count; index += Vector<float>.Count)
+                Vector.Narrow(new Vector<double>(input[index..]), new Vector<double>(input[(index + half)..]))
+                    .CopyTo(output[index..]);
+        }
+        for (; index < input.Length; index++)
+            output[index] = (float)input[index];
+    }
+
+    private struct ChannelMeter
+    {
+        public float Peak;
+        public double Sum;
+        public long Clips;
+    }
+
+    private static void Accumulate(double[] data, int frames, ChannelMeter[] meters)
+    {
+        for (int channel = 0; channel < meters.Length; channel++)
+        {
+            ref var meter = ref meters[channel];
             for (int frame = 0; frame < frames; frame++)
             {
-                double value = Math.Abs(data[frame * channels + channel]);
-                peak = Math.Max(peak, (float)value);
-                sum += value * value;
+                double value = Math.Abs(data[frame * meters.Length + channel]);
+                meter.Peak = Math.Max(meter.Peak, (float)value);
+                meter.Sum += value * value;
                 if (value > 1)
-                    clips[channel]++;
+                    meter.Clips++;
             }
-            meters[channel] = new(peak, (float)Math.Sqrt(sum / Math.Max(1, frames)), clips[channel]);
         }
-        return meters;
+    }
+
+    private static Meter[] Snapshot(ChannelMeter[] meters, int frames)
+    {
+        var snapshot = new Meter[meters.Length];
+        for (int channel = 0; channel < meters.Length; channel++)
+        {
+            ref var meter = ref meters[channel];
+            snapshot[channel] = new(meter.Peak, (float)Math.Sqrt(meter.Sum / frames), meter.Clips);
+            meter.Peak = 0;
+            meter.Sum = 0;
+        }
+        return snapshot;
     }
 
     public void Dispose()
@@ -464,7 +537,5 @@ internal sealed class Playback : IWaveProvider, IDisposable
             Diagnostics.Cleanup("Closing audio output", output.Dispose);
         producer?.Join();
         Diagnostics.Cleanup("Releasing audio decoder", decoder.Dispose);
-        if (binaural is not null)
-            Diagnostics.Cleanup("Releasing binaural renderer", binaural.Dispose);
     }
 }

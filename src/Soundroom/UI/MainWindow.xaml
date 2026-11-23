@@ -20,6 +20,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <StackPanel Spacing="15">
                 <TextBlock Text="Soundroom" FontSize="27" FontWeight="SemiBold" />
@@ -56,6 +57,18 @@
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
+            <Grid Grid.Row="2" ColumnSpacing="4" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="PreviousPageButton" Content="‹" Click="PreviousPage" IsEnabled="False"
+                        AutomationProperties.Name="Previous library page" />
+                <TextBlock x:Name="PageLabel" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Button x:Name="NextPageButton" Grid.Column="2" Content="›" Click="NextPage" IsEnabled="False"
+                        AutomationProperties.Name="Next library page" />
+            </Grid>
         </Grid>
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="NowPlaying" Margin="32,26,32,26" Spacing="14" HorizontalAlignment="Stretch">
@@ -94,7 +107,10 @@
                             <ComboBoxItem Content="Exclusive · DSD over PCM" />
                             <ComboBoxItem Content="ASIO · native DSD" />
                         </ComboBox>
-                        <Button Content="Output settings" Click="ShowOutputSettings" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Output settings" Click="ShowOutputSettings" />
+                            <Button Content="Inspect signal" Click="OpenSignalInspector" />
+                        </StackPanel>
                         <TextBlock x:Name="SignalPath" TextWrapping="Wrap" FontSize="12"
                                    Foreground="{StaticResource SecondaryBrush}" />
                     </StackPanel>
@@ -107,7 +123,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
             <TextBlock Text="Audio inspector" FontSize="22" FontWeight="SemiBold" />
-            <Pivot Grid.Row="1" Margin="-8,6,-8,0">
+            <Pivot x:Name="InspectorTabs" Grid.Row="1" Margin="-8,6,-8,0">
                 <PivotItem Header="Channels">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel Spacing="12">
@@ -127,16 +143,41 @@
                             <TextBlock Text="Player output" FontWeight="SemiBold" />
                             <TextBlock x:Name="LiveStats" Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" />
                             <StackPanel x:Name="OutputMeters" Spacing="4" />
+                            <StackPanel x:Name="PhaseScopePanel" Spacing="5" Visibility="Collapsed">
+                                <TextBlock Text="Front L/R phase scope" FontWeight="SemiBold" />
+                                <Canvas x:Name="PhaseScope" Height="135" Background="#27232D" />
+                                <TextBlock Text="Vertical · in phase     Horizontal · opposite phase" FontSize="11"
+                                           Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </PivotItem>
-                <PivotItem Header="DSP">
+                <PivotItem x:Name="DspTab" Header="DSP">
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="DspPanel" Spacing="10">
                             <ToggleSwitch x:Name="DspEnabled" Header="Headphone DSP" IsOn="True" />
                             <Canvas x:Name="EqChart" Height="104" Background="#27232D" SizeChanged="EqResized" />
                             <TextBlock Text="Response curve · 20 Hz to 20 kHz" FontSize="12"
                                        Foreground="{StaticResource SecondaryBrush}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </PivotItem>
+                <PivotItem x:Name="SignalTab" Header="Signal">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="12">
+                            <TextBlock x:Name="SignalVerdict" Text="No active output" TextWrapping="Wrap"
+                                       FontSize="18" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SignalExplanation" Text="Play a track to inspect its audio path."
+                                       TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}" />
+                            <TextBlock x:Name="SignalNotice" TextWrapping="Wrap" Visibility="Collapsed"
+                                       Foreground="{StaticResource SecondaryBrush}" />
+                            <StackPanel x:Name="HardwareReadbackPanel" Spacing="5" Visibility="Collapsed">
+                                <TextBlock Text="Hardware readback" FontWeight="SemiBold" />
+                                <TextBlock x:Name="HardwareReadbackText" TextWrapping="Wrap" FontSize="12"
+                                           Foreground="{StaticResource SecondaryBrush}" />
+                                <Button x:Name="HardwareMuteButton" Click="ToggleHardwareMute" Visibility="Collapsed" />
+                            </StackPanel>
+                            <StackPanel x:Name="SignalStages" Spacing="6" />
                         </StackPanel>
                     </ScrollViewer>
                 </PivotItem>

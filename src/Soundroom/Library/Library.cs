@@ -165,7 +165,7 @@ internal static class Media
     }
 }
 
-internal sealed class Library
+internal sealed partial class Library
 {
     private readonly string connectionString;
 
@@ -186,6 +186,19 @@ internal sealed class Library
             CREATE TABLE IF NOT EXISTS tracks(path TEXT PRIMARY KEY COLLATE NOCASE, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS presets(name TEXT PRIMARY KEY COLLATE NOCASE, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS settings(name TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS track_catalog(
+                key TEXT PRIMARY KEY COLLATE NOCASE, file TEXT COLLATE NOCASE, folder TEXT COLLATE NOCASE,
+                source TEXT, relative TEXT COLLATE NOCASE, index_file TEXT COLLATE NOCASE,
+                cue INTEGER, missing INTEGER, album TEXT COLLATE NOCASE, edition TEXT COLLATE NOCASE,
+                has_album INTEGER, disc INTEGER, number INTEGER, title TEXT COLLATE NOCASE,
+                search TEXT, codec TEXT, rate INTEGER, bits INTEGER, dr REAL, genre TEXT,
+                year TEXT, rating INTEGER, plays INTEGER);
+            CREATE INDEX IF NOT EXISTS catalog_order ON track_catalog(missing, album, edition, disc, number, title, key);
+            CREATE INDEX IF NOT EXISTS catalog_file ON track_catalog(file, cue, missing, source);
+            CREATE INDEX IF NOT EXISTS catalog_source_file ON track_catalog(source, index_file);
+            CREATE INDEX IF NOT EXISTS catalog_source_key ON track_catalog(source, key);
+            CREATE INDEX IF NOT EXISTS catalog_relative ON track_catalog(source, relative, missing, cue);
+            CREATE INDEX IF NOT EXISTS catalog_folder ON track_catalog(folder);
             """;
         command.ExecuteNonQuery();
     }
@@ -215,11 +228,15 @@ internal sealed class Library
     public void Save(Track track)
     {
         using var db = Open();
+        using var transaction = db.BeginTransaction();
         using var command = db.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "INSERT OR REPLACE INTO tracks VALUES ($path, $data)";
         command.Parameters.AddWithValue("$path", track.Key);
         command.Parameters.AddWithValue("$data", JsonSerializer.Serialize(track));
         command.ExecuteNonQuery();
+        SaveCatalog(db, transaction, track.Key, track);
+        transaction.Commit();
     }
 
     public void SavePreset(string name, DspSettings settings)
