@@ -1,0 +1,329 @@
+{
+  "albums": [
+    {
+      "id": "violet",
+      "title": "Violet Coast",
+      "artist": "Juniper Signal",
+      "year": 2025,
+      "genre": "Ambient",
+      "artwork": "/art/violet.webp",
+      "tracks": [
+        {
+          "id": "violet-1",
+          "title": "Low Tide",
+          "artist": "Juniper Signal",
+          "albumId": "violet",
+          "album": "Violet Coast",
+          "artwork": "/art/violet.webp",
+          "duration": 264,
+          "number": 1
+        },
+        {
+          "id": "violet-2",
+          "title": "Night Current",
+          "artist": "Juniper Signal",
+          "albumId": "violet",
+          "album": "Violet Coast",
+          "artwork": "/art/violet.webp",
+          "duration": 218,
+          "number": 2
+        },
+        {
+          "id": "violet-3",
+          "title": "Signal Fires",
+          "artist": "Juniper Signal",
+          "albumId": "violet",
+          "album": "Violet Coast",
+          "artwork": "/art/violet.webp",
+          "duration": 305,
+          "number": 3
+        },
+        {
+          "id": "violet-4",
+          "title": "Between Headlands",
+          "artist": "Juniper Signal",
+          "albumId": "violet",
+          "album": "Violet Coast",
+          "artwork": "/art/violet.webp",
+          "duration": 196,
+          "number": 4
+        }
+      ]
+    },
+    {
+      "id": "sun",
+      "title": "A Sun Apart",
+      "artist": "Astra Vale",
+      "year": 2024,
+      "genre": "Electronic",
+      "artwork": "/art/sun.webp",
+      "tracks": [
+        {
+          "id": "sun-1",
+          "title": "Orbital",
+          "artist": "Astra Vale",
+          "albumId": "sun",
+          "album": "A Sun Apart",
+          "artwork": "/art/sun.webp",
+          "duration": 202,
+          "number": 1
+        },
+        {
+          "id": "sun-2",
+          "title": "A Sun Apart",
+          "artist": "Astra Vale",
+          "albumId": "sun",
+          "album": "A Sun Apart",
+          "artwork": "/art/sun.webp",
+          "duration": 241,
+          "number": 2
+        },
+        {
+          "id": "sun-3",
+          "title": "The Last Heat",
+          "artist": "Astra Vale",
+          "albumId": "sun",
+          "album": "A Sun Apart",
+          "artwork": "/art/sun.webp",
+          "duration": 307,
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": "deep",
+      "title": "Blue Meridian",
+      "artist": "Polar Field",
+      "year": 2023,
+      "genre": "Ambient",
+      "artwork": "/art/deep.webp",
+      "tracks": [
+        {
+          "id": "deep-1",
+          "title": "Ice Line",
+          "artist": "Polar Field",
+          "albumId": "deep",
+          "album": "Blue Meridian",
+          "artwork": "/art/deep.webp",
+          "duration": 229,
+          "number": 1
+        },
+        {
+          "id": "deep-2",
+          "title": "Blue Meridian",
+          "artist": "Polar Field",
+          "albumId": "deep",
+          "album": "Blue Meridian",
+          "artwork": "/art/deep.webp",
+          "duration": 305,
+          "number": 2
+        },
+        {
+          "id": "deep-3",
+          "title": "Outer Shelf",
+          "artist": "Polar Field",
+          "albumId": "deep",
+          "album": "Blue Meridian",
+          "artwork": "/art/deep.webp",
+          "duration": 278,
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": "bloom",
+      "title": "Soft Bloom",
+      "artist": "Mira Sol",
+      "year": 2025,
+      "genre": "Downtempo",
+      "artwork": "/art/bloom.webp",
+      "tracks": [
+        {
+          "id": "bloom-1",
+          "title": "Petal Study",
+          "artist": "Mira Sol",
+          "albumId": "bloom",
+          "album": "Soft Bloom",
+          "artwork": "/art/bloom.webp",
+          "duration": 218,
+          "number": 1
+        },
+        {
+          "id": "bloom-2",
+          "title": "Pink Hour",
+          "artist": "Mira Sol",
+          "albumId": "bloom",
+          "album": "Soft Bloom",
+          "artwork": "/art/bloom.webp",
+          "duration": 242,
+          "number": 2
+        },
+        {
+          "id": "bloom-3",
+          "title": "Soft Bloom",
+          "artist": "Mira Sol",
+          "albumId": "bloom",
+          "album": "Soft Bloom",
+          "artwork": "/art/bloom.webp",
+          "duration": 211,
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": "canopy",
+      "title": "Under Canopy",
+      "artist": "Cedar Forms",
+      "year": 2024,
+      "genre": "Ambient",
+      "artwork": "/art/canopy.webp",
+      "tracks": [
+        {
+          "id": "canopy-1",
+          "title": "Stillwater",
+          "artist": "Cedar Forms",
+          "albumId": "canopy",
+          "album": "Under Canopy",
+          "artwork": "/art/canopy.webp",
+          "duration": 259,
+          "number": 1
+        },
+        {
+          "id": "canopy-2",
+          "title": "Fern Light",
+          "artist": "Cedar Forms",
+          "albumId": "canopy",
+          "album": "Under Canopy",
+          "artwork": "/art/canopy.webp",
+          "duration": 211,
+          "number": 2
+        },
+        {
+          "id": "canopy-3",
+          "title": "Conifers",
+          "artist": "Cedar Forms",
+          "albumId": "canopy",
+          "album": "Under Canopy",
+          "artwork": "/art/canopy.webp",
+          "duration": 243,
+          "number": 3
+        }
+      ]
+    },
+    {
+      "id": "night",
+      "title": "Night Architecture",
+      "artist": "Oriel",
+      "year": 2025,
+      "genre": "Electronic",
+      "artwork": "/art/night.webp",
+      "tracks": [
+        {
+          "id": "night-1",
+          "title": "Lit Windows",
+          "artist": "Oriel",
+          "albumId": "night",
+          "album": "Night Architecture",
+          "artwork": "/art/night.webp",
+          "duration": 203,
+          "number": 1
+        },
+        {
+          "id": "night-2",
+          "title": "Empty Platforms",
+          "artist": "Oriel",
+          "albumId": "night",
+          "album": "Night Architecture",
+          "artwork": "/art/night.webp",
+          "duration": 244,
+          "number": 2
+        },
+        {
+          "id": "night-3",
+          "title": "Night Architecture",
+          "artist": "Oriel",
+          "albumId": "night",
+          "album": "Night Architecture",
+          "artwork": "/art/night.webp",
+          "duration": 268,
+          "number": 3
+        }
+      ]
+    }
+  ],
+  "playlists": [
+    {
+      "id": "after-hours",
+      "title": "After Hours",
+      "description": "Slow rhythms after dark.",
+      "trackIds": [
+        "violet-1",
+        "night-1",
+        "bloom-2",
+        "deep-2",
+        "night-2"
+      ]
+    },
+    {
+      "id": "slow-mornings",
+      "title": "Slow Mornings",
+      "description": "A quiet start.",
+      "trackIds": [
+        "canopy-1",
+        "bloom-1",
+        "violet-4",
+        "deep-1"
+      ]
+    }
+  ],
+  "lyrics": [
+    {
+      "at": 0,
+      "text": "Out where the water meets the sky"
+    },
+    {
+      "at": 12,
+      "text": "The shoreline gathers up the light"
+    },
+    {
+      "at": 24,
+      "text": "We let the silence drift between us"
+    },
+    {
+      "at": 38,
+      "text": "And leave our names beneath the tide"
+    },
+    {
+      "at": 53,
+      "text": "There’s a light beyond the headland"
+    },
+    {
+      "at": 69,
+      "text": "There’s a place the waves can hide"
+    },
+    {
+      "at": 85,
+      "text": "When the harbor falls to quiet"
+    },
+    {
+      "at": 102,
+      "text": "I’ll be waiting on the other side"
+    },
+    {
+      "at": 125,
+      "text": "Out where the water meets the sky"
+    },
+    {
+      "at": 148,
+      "text": "The shoreline gives back all the light"
+    },
+    {
+      "at": 175,
+      "text": "We let the silence drift between us"
+    },
+    {
+      "at": 207,
+      "text": "And leave our names beneath the tide"
+    }
+  ]
+}

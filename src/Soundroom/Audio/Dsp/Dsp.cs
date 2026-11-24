@@ -118,6 +118,7 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
     private readonly int fadeFrames = Math.Max(1, rate / 100);
     private readonly StereoConvolution? fir = impulse is null ? null : new(impulse);
     private readonly TruePeakProcessor limiter = new(rate);
+    public double? LimiterReductionDb => limiting ? limiter.GainReductionDb : null;
 
     public void Apply(double[] samples, int frames, DspSettings settings, double volume, double normalizationDb)
     {

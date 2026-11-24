@@ -18,14 +18,23 @@ internal static class Speakers
         (6, "5.1") => ["FL", "FR", "FC", "LFE", "BL", "BR"],
         (6, "5.1(side)") => ["FL", "FR", "FC", "LFE", "SL", "SR"],
         (8, "7.1") => Surround71.ToArray(),
+        (10, "5.1.4") => ["FL", "FR", "FC", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"],
+        (10, "10 channels (FL+FR+FC+LFE+BL+BR+TFL+TFR+TBL+TBR)") =>
+            ["FL", "FR", "FC", "LFE", "BL", "BR", "TFL", "TFR", "TBL", "TBR"],
+        (12, "7.1.4") => [.. Surround71, "TFL", "TFR", "TBL", "TBR"],
         _ => Enumerable.Range(1, track.Channels).Select(i => $"Ch {i}").ToArray()
     };
 
-    public static double Angle(string speaker) => speaker switch
+    public static (double Azimuth, double Elevation) Direction(string speaker) => speaker switch
     {
-        "FL" => -30, "FR" => 30, "SL" => -95, "SR" => 95,
-        "BL" => -145, "BR" => 145, _ => 0
+        "FL" => (-30, 0), "FR" => (30, 0), "SL" => (-95, 0), "SR" => (95, 0),
+        "BL" => (-145, 0), "BR" => (145, 0),
+        "TFL" => (-30, 45), "TFR" => (30, 45),
+        "TBL" => (-145, 45), "TBR" => (145, 45),
+        _ => (0, 0)
     };
+
+    public static bool HasHeight(string[] channels) => channels.Any(channel => Direction(channel).Elevation != 0);
 }
 
 internal sealed unsafe class HrtfResponseReader : IDisposable
@@ -53,7 +62,7 @@ internal sealed unsafe class HrtfResponseReader : IDisposable
         }
     }
 
-    public ImpulseResponse Read(double degrees)
+    public ImpulseResponse Read(double azimuth, double elevation)
     {
         var input = new float[Block];
         var left = new float[Block];
@@ -67,10 +76,15 @@ internal sealed unsafe class HrtfResponseReader : IDisposable
             float** outputPointers = stackalloc float*[2] { l, r };
             var source = new Buffer { Channels = 1, Frames = Block, Data = inputPointers };
             var stereo = new Buffer { Channels = 2, Frames = Block, Data = outputPointers };
-            double angle = degrees * Math.PI / 180;
+            double azimuthRadians = azimuth * Math.PI / 180;
+            double elevationRadians = elevation * Math.PI / 180;
+            double horizontal = Math.Cos(elevationRadians);
+            // Steam Audio uses +X right, +Y up, and -Z forward.
             var settings = new EffectParameters
             {
-                X = (float)Math.Sin(angle), Z = -(float)Math.Cos(angle),
+                X = (float)(horizontal * Math.Sin(azimuthRadians)),
+                Y = (float)Math.Sin(elevationRadians),
+                Z = (float)(-horizontal * Math.Cos(azimuthRadians)),
                 Interpolation = 1, Blend = 1, Hrtf = hrtf
             };
             iplBinauralEffectApply(effect, ref settings, ref source, ref stereo);
@@ -151,21 +165,32 @@ internal sealed unsafe class HrtfResponseReader : IDisposable
 internal sealed class Binaural
 {
     public const int Block = 512;
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int Rate, double Angle), ImpulseResponse> Responses = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<
+        (int Rate, (double Azimuth, double Elevation) Direction), ImpulseResponse> Responses = new();
     private readonly StereoConvolution?[] filters;
     private readonly double[] scratch = new double[Block * 2];
     private readonly double gain;
 
     public Binaural(int rate, string[] channels)
     {
-        filters = channels.Select(channel => channel == "LFE" ? null : new StereoConvolution(
-            Responses.GetOrAdd((rate, Speakers.Angle(channel)), static key =>
+        filters = new StereoConvolution?[channels.Length];
+        for (int index = 0; index < channels.Length; index++)
+        {
+            string channel = channels[index];
+            if (channel == "LFE")
+                continue;
+            var response = Responses.GetOrAdd((rate, Speakers.Direction(channel)), static key =>
             {
                 using var reader = new HrtfResponseReader(key.Rate);
-                return reader.Read(key.Angle);
-            }))).ToArray();
+                return reader.Read(key.Direction.Azimuth, key.Direction.Elevation);
+            });
+            filters[index] = new StereoConvolution(response);
+            TailFrames = Math.Max(TailFrames, Math.Max(response.Left.Length, response.Right.Length) - 1);
+        }
         gain = channels.Length > 2 ? .5 : .7071;
     }
+
+    public int TailFrames { get; }
 
     public void Render(double[] source, double[] stereo)
     {
@@ -190,5 +215,4 @@ internal sealed class Binaural
                 stereo[sample] += scratch[sample] * gain;
         }
     }
-
 }

@@ -3,7 +3,8 @@ namespace Soundroom;
 internal sealed record PlaybackOptions(bool Memory = false, int TargetRate = 0, int OutputBits = 24,
     bool Sharper = false, IReadOnlyList<Track>? Following = null, string? ImpulsePath = null,
     bool MinimumPhase = false, string? AsioDriver = null, CancellationToken Preparation = default,
-    Func<Track, Track?>? NextTrack = null, int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB)
+    Func<Track, Track?>? NextTrack = null, int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB,
+    Func<bool>? CanAdvance = null)
 {
     public string ResamplingFilter(int rate) =>
         $"aresample={rate}:resampler=swr:tsf=dblp:filter_type=kaiser:kaiser_beta=12:filter_size={(Sharper ? 256 : 128)}:phase_shift=12:exact_rational=1:cutoff={(Sharper ? "0.97" : "0.91")}";
@@ -23,6 +24,7 @@ internal sealed class AudioSource : IDisposable
     private readonly Route route;
     private readonly Queue<Track> following;
     private readonly Func<Track, Track?>? nextTrack;
+    private readonly Func<bool>? canAdvance;
     private readonly Func<Track, double, CancellationToken, IDecodedSource> open;
     private readonly CancellationTokenSource prefetchStop = new();
     private readonly CancellationToken prefetchToken;
@@ -31,13 +33,13 @@ internal sealed class AudioSource : IDisposable
     private Task? prefetchTask;
     private Track current;
     private Track? next;
-    private bool canceled;
+    private bool canceled, prefetchExpired;
     private long total, boundary;
 
     public AudioSource(Track track, double offset, int rate, string encoding, string? resampler,
         bool memory, IReadOnlyList<Track>? queue, Route route, int bits, bool minimumPhase = false, bool sharper = false,
         CancellationToken preparation = default, Func<Track, Track?>? nextTrack = null,
-        int memoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB)
+        int memoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB, Func<bool>? canAdvance = null)
     {
         this.route = route;
         prefetchToken = prefetchStop.Token;
@@ -47,6 +49,7 @@ internal sealed class AudioSource : IDisposable
         var budget = new RamPlaybackBudget(memoryLimitMiB);
         following = new(queue ?? []);
         this.nextTrack = nextTrack;
+        this.canAdvance = canAdvance;
         IDecodedSource OpenDecoder(Track item, double seconds) =>
             (route is Route.Dop or Route.NativeDsd) ? new DsdReader(item, seconds, bits) :
                 minimumPhase && encoding == "f64le" && item.Rate != rate ? new MinimumPhaseSource(item, seconds, rate, sharper) :
@@ -76,6 +79,8 @@ internal sealed class AudioSource : IDisposable
 
     private void Prefetch()
     {
+        if (canAdvance?.Invoke() == false)
+            return;
         if (!following.TryDequeue(out Track? queued) && nextTrack is null)
             return;
         Track previous = current;
@@ -108,8 +113,10 @@ internal sealed class AudioSource : IDisposable
         });
     }
 
-    public int Read(byte[] buffer, List<(Track Track, long Frame)>? transitions = null)
+    public int Read(byte[] buffer, List<(Track Track, long Frame)>? transitions = null, int prefetchWaitMs = -1)
     {
+        if (prefetchExpired)
+            return 0;
         int filled = 0;
         while (filled < buffer.Length)
         {
@@ -127,11 +134,17 @@ internal sealed class AudioSource : IDisposable
             filled += count;
             if (count != 0)
                 continue;
-            // Only the decode worker waits here. The device can continue draining queued audio.
-            prefetchTask?.GetAwaiter().GetResult();
+            if (canAdvance?.Invoke() == false)
+                break;
+            // Preserve queued audio if the next decoder cannot become ready before the device needs it.
+            if (prefetchTask is { IsCompleted: false } task && !task.Wait(prefetchWaitMs, prefetchToken))
+            {
+                prefetchExpired = true;
+                break;
+            }
             lock (gate)
             {
-                if (canceled || pending is null || next is null)
+                if (canceled || pending is null || next is null || canAdvance?.Invoke() == false)
                     break;
                 source.Dispose();
                 source = pending;

@@ -19,12 +19,12 @@ public partial class App : Application
         {
             window = new Window
             {
-                Title = "Soundroom",
+                Title = "MP4A",
                 Content = new Microsoft.UI.Xaml.Controls.TextBlock
                 {
                     Margin = new Thickness(24),
                     TextWrapping = TextWrapping.Wrap,
-                    Text = Diagnostics.Report("Could not start Soundroom", error) + $"\n\nLog location\n{Diagnostics.LogFile}"
+                    Text = Diagnostics.Report("Could not start MP4A", error) + $"\n\nLog location\n{Diagnostics.LogFile}"
                 }
             };
         }

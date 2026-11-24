@@ -14,6 +14,7 @@ internal sealed class TruePeakProcessor(int rate, int channels = 2)
     private double[][]? limiterHistory;
     private int position;
     private double gain = 1;
+    public double GainReductionDb => -20 * Math.Log10(Math.Max(gain, 1e-9));
 
     private static double[][] BuildKernel() => Enumerable.Range(1, 3).Select(phase =>
     {

@@ -41,7 +41,8 @@ internal sealed record SignalPathReport(string Verdict, bool ExactAtOutput, stri
         }
 
         if (mode == Route.Binaural)
-            Add("Binaural rendering", $"{route.InputChannels.Length} → 2 channels",
+            Add("Binaural rendering", $"{route.InputChannels.Length} → 2 channels" +
+                (Speakers.HasHeight(route.InputChannels) ? " · Includes height channels" : ""),
                 "Soundroom convolves the audio in 64-bit floats using impulse responses prepared from Steam Audio’s HRTF.");
         else if (processed && route.InputChannels.Length != route.OutputChannels.Length)
             Add("Channel mix", $"{route.InputChannels.Length} → {route.OutputChannels.Length} channels", "Soundroom mixes the source layout to stereo.");

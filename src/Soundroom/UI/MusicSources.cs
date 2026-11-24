@@ -10,7 +10,47 @@ public sealed partial class MainWindow
     private readonly Dictionary<string, FileSystemWatcher> watchers = new();
     private readonly ConcurrentDictionary<string, long> dirtySources = new();
     private readonly DispatcherTimer sourceTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-    private bool checkingMounts, scanningSources;
+    private bool checkingMounts, reindexing;
+    private Task? sourceScan;
+
+    private async void ReindexLibrary(object sender, RoutedEventArgs args)
+    {
+        if (!catalogReady || reindexing || importing)
+            return;
+        reindexing = true;
+        var cancellation = libraryLifetime.Token;
+        try
+        {
+            status = "Reindexing the library…";
+            if (sourceScan is { } activeScan)
+                await activeScan;
+            while (checkingMounts)
+                await Task.Delay(25, cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            await CheckMusicFolders();
+            foreach (var source in musicSources.ToArray())
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (!mountedSources.TryGetValue(source.Id, out var root))
+                    continue;
+                dirtySources.TryRemove(source.Id, out _);
+                await RunSourceScan(source, root);
+            }
+
+            var mounts = new Dictionary<string, string>(mountedSources, StringComparer.OrdinalIgnoreCase);
+            int hidden = await Task.Run(() => library.HideMissingFiles(mounts, cancellation), cancellation);
+            cancellation.ThrowIfCancellationRequested();
+            ResetPlaybackOrder();
+            RefreshLibrary();
+            status = hidden == 0 ? "Library reindex complete." : $"Library reindex complete. Hid {hidden:N0} missing {(hidden == 1 ? "track" : "tracks")}.";
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception error) { ShowError("Reindexing the library", error); }
+        finally
+        {
+            reindexing = false;
+        }
+    }
 
     private void StartSourceMonitoring()
     {
@@ -68,11 +108,8 @@ public sealed partial class MainWindow
         generation++;
         preparingPlayback?.Cancel();
         Stop();
-        updatingSeek = true;
-        Seek.Value = Math.Clamp(position, 0, Seek.Maximum);
-        updatingSeek = false;
-        Elapsed.Text = Time(position);
-        Status.Text = OfflineMessage(id);
+        resumePosition = Math.Clamp(position, 0, track?.Duration ?? 0);
+        status = OfflineMessage(id);
     }
 
     private async Task CheckMusicFolders()
@@ -99,7 +136,7 @@ public sealed partial class MainWindow
                     {
                         mountedSources.Remove(source.Id);
                         if (track?.SourceId == source.Id && (playback is not null || preparingPlayback is not null))
-                            StopForSource(source.Id, playback?.Position ?? Seek.Value);
+                            StopForSource(source.Id, WebPosition());
                         continue;
                     }
                     mountedSources[source.Id] = root;
@@ -110,14 +147,12 @@ public sealed partial class MainWindow
                     catch (Exception error) { ShowError($"Watching {source.Name}", error); }
                 }
             }
-            SourceStatus.Text = string.Join("\n", musicSources.Select(source =>
-                $"{source.Name} · {(mountedSources.ContainsKey(source.Id) ? "Connected" : "Offline")}"));
             if (pathsChanged)
             {
-                RefreshGroups();
-                RefreshLibrary();
+                Interlocked.Increment(ref queueRevision);
+                    RefreshLibrary();
             }
-            if (scanningSources)
+            if (reindexing || sourceScan is { IsCompleted: false })
                 return;
             foreach (var source in musicSources.ToArray())
             {
@@ -128,8 +163,7 @@ public sealed partial class MainWindow
                     Environment.TickCount64 - changed < 900 ||
                     !dirtySources.TryRemove(new KeyValuePair<string, long>(source.Id, changed)))
                     continue;
-                scanningSources = true;
-                _ = RunSourceScan(source, root);
+                sourceScan = RunSourceScan(source, root);
                 break;
             }
         }
@@ -147,14 +181,12 @@ public sealed partial class MainWindow
                 if (!ScanStillMounted(source, root))
                     return;
                 library.Put("mount:" + source.Id, root);
-                RefreshGroups();
-                RefreshLibrary();
+                    RefreshLibrary();
             }
             await ScanMusicFolder(source, root);
         }
         catch (OperationCanceledException) when (libraryLifetime.IsCancellationRequested) { }
         catch (Exception error) { ShowError($"Scanning {source.Name}", error); }
-        finally { scanningSources = false; }
     }
 
     private FileSystemWatcher Watch(string id, string root)
@@ -191,7 +223,7 @@ public sealed partial class MainWindow
             !inaccessible.Any(folder => file.StartsWith(folder, StringComparison.OrdinalIgnoreCase))).ToArray();
         if (changed.Length == 0 && deleted.Length == 0)
             return;
-        Status.Text = $"Indexing {source.Name}…";
+        status = $"Indexing {source.Name}…";
         int failures = 0;
         foreach (var file in changed.OrderBy(file => !file.Key.EndsWith(".cue", StringComparison.OrdinalIgnoreCase)))
         {
@@ -238,9 +270,8 @@ public sealed partial class MainWindow
             old.Remove(file);
         }
         library.Put("scan:" + source.Id, old);
-        RefreshGroups();
         RefreshLibrary();
-        Status.Text = failures == 0 ? $"{source.Name} is up to date." : $"{source.Name}: {failures} files could not be indexed. See the Soundroom log.";
+        status = failures == 0 ? $"{source.Name} is up to date." : $"{source.Name}: {failures} files could not be indexed. See the Soundroom log.";
     }
 
     private bool ScanStillMounted(MusicSource source, string root) => ready &&

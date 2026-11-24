@@ -6,8 +6,10 @@ namespace Soundroom;
 internal static class Diagnostics
 {
     private static readonly object Gate = new();
-    public static string DataDirectory => Path.Combine(Environment.GetFolderPath(
-        Environment.SpecialFolder.LocalApplicationData), "Soundroom");
+    public static string DataDirectory { get; } =
+        Environment.GetEnvironmentVariable("MP4A_DATA_DIRECTORY") is { Length: > 0 } isolated
+            ? Path.GetFullPath(isolated)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Soundroom");
     public static string LogFile => Path.Combine(DataDirectory, "Logs", "Soundroom.log");
 
     public static string Report(string operation, Exception error)

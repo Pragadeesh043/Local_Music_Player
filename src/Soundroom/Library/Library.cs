@@ -151,25 +151,68 @@ internal static class Media
         }).ToArray();
     }
 
-    public static async Task<byte[]> CoverAsync(string path, int index = 0)
+    public static async Task<byte[]> CoverAsync(string path, int index = 0) =>
+        (await ReadArtworkAsync(path, $"0:v:disp:attached_pic:{index}", 800, webp: false, default).ConfigureAwait(false)).Bytes;
+
+    internal static async Task<(byte[] Bytes, bool NoEmbeddedCover)> ThumbnailAsync(
+        string path, bool embedded, CancellationToken cancellation)
     {
-        using var process = Start("ffmpeg", "-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path,
-            "-map", $"0:v:disp:attached_pic:{index}", "-frames:v", "1", "-vf",
-            "scale=800:800:force_original_aspect_ratio=decrease", "-c:v", "png", "-f", "image2pipe", "pipe:1");
+        string map = embedded ? "0:v:disp:attached_pic:0" : "0:v:0";
+        var result = await ReadArtworkAsync(path, map, 640, webp: true, cancellation).ConfigureAwait(false);
+        if (result.Error.Contains("Unknown encoder 'libwebp'", StringComparison.OrdinalIgnoreCase))
+            result = await ReadArtworkAsync(path, map, 640, webp: false, cancellation).ConfigureAwait(false);
+        return (result.Bytes, embedded && result.Bytes.Length == 0 &&
+            result.Error.Contains("Stream map", StringComparison.Ordinal) &&
+            result.Error.Contains("matches no streams", StringComparison.Ordinal));
+    }
+
+    private static async Task<(byte[] Bytes, string Error)> ReadArtworkAsync(
+        string path, string stream, int size, bool webp, CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        string[] encoding = webp
+            ? ["-c:v", "libwebp", "-quality", "78", "-compression_level", "4", "-pix_fmt", "yuva420p", "-f", "webp"]
+            : ["-c:v", "png", "-pix_fmt", "rgba", "-f", "image2pipe"];
+        using var process = Start("ffmpeg", ["-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path,
+            "-map", stream, "-frames:v", "1", "-vf",
+            $"scale={size}:{size}:force_original_aspect_ratio=decrease", .. encoding, "pipe:1"]);
+        using var stop = cancellation.Register(() =>
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            catch (Exception error) when (error is InvalidOperationException or Win32Exception) { }
+        });
         var error = process.StandardError.ReadToEndAsync();
         using var data = new MemoryStream();
-        await process.StandardOutput.BaseStream.CopyToAsync(data);
-        await process.WaitForExitAsync();
-        await error;
-        return process.ExitCode == 0 ? data.ToArray() : [];
+        await process.StandardOutput.BaseStream.CopyToAsync(data, cancellation).ConfigureAwait(false);
+        await process.WaitForExitAsync(cancellation).ConfigureAwait(false);
+        string details = await error.ConfigureAwait(false);
+        return (process.ExitCode == 0 ? data.ToArray() : [], details);
+    }
+}
+
+internal static class SoundroomSqlite
+{
+    static SoundroomSqlite() => SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
+
+    public static SqliteConnection Open(string connectionString)
+    {
+        var db = new SqliteConnection(connectionString);
+        try
+        {
+            db.Open();
+            return db;
+        }
+        catch
+        {
+            db.Dispose();
+            throw;
+        }
     }
 }
 
 internal sealed partial class Library
 {
     private readonly string connectionString;
-
-    static Library() => SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
 
     public Library(string? dataDirectory = null)
     {
@@ -199,16 +242,14 @@ internal sealed partial class Library
             CREATE INDEX IF NOT EXISTS catalog_source_key ON track_catalog(source, key);
             CREATE INDEX IF NOT EXISTS catalog_relative ON track_catalog(source, relative, missing, cue);
             CREATE INDEX IF NOT EXISTS catalog_folder ON track_catalog(folder);
+            CREATE TABLE IF NOT EXISTS track_sort(
+                key TEXT PRIMARY KEY COLLATE NOCASE, artist TEXT COLLATE NOCASE, album_artist TEXT COLLATE NOCASE,
+                album_name TEXT COLLATE NOCASE, filename TEXT COLLATE NOCASE, duration REAL, added INTEGER);
             """;
         command.ExecuteNonQuery();
     }
 
-    private SqliteConnection Open()
-    {
-        var db = new SqliteConnection(connectionString);
-        db.Open();
-        return db;
-    }
+    private SqliteConnection Open() => SoundroomSqlite.Open(connectionString);
 
     public List<Track> Tracks()
     {

@@ -1,153 +1,80 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using NAudio.Dsp;
 using NAudio.Wave;
 
 namespace Soundroom;
 
 public sealed partial class MainWindow
 {
-    private (Playback Session, Track Track, ProcessingSnapshot Snapshot, bool Hardware)? signalView;
-    private readonly HashSet<string> expandedSignalStages = [];
-    private long nextReadback;
-    private bool readingHardware;
-    private bool? hardwareMute;
+    private bool liveSignal;
+    private Signal? lastSignal;
+    private readonly Complex[] fft = new Complex[512];
 
-    private void OpenSignalInspector(object sender, RoutedEventArgs args)
+    private object? ListenSignal(bool enabled)
     {
-        InspectorTabs.SelectedItem = SignalTab;
-        if (playback is { } session)
-            _ = RefreshHardwareReadback(session, force: true);
+        liveSignal = enabled;
+        lastSignal = null;
+        playback?.SetAnalysisEnabled(enabled && presentationVisible);
+        return enabled && playback is { } current && current.Latest is { } signal ? SignalData(current, signal) : null;
     }
 
-    private void ClearSignalPath()
+    private void PublishLiveSignal(Playback session)
     {
-        if (signalView is null)
+        if (!liveSignal || !presentationVisible || session.Latest is not { } signal || ReferenceEquals(signal, lastSignal))
             return;
-        signalView = null;
-        SignalPath.Text = "";
-        SignalVerdict.Text = "No active output";
-        SignalVerdict.Foreground = neutral;
-        SignalExplanation.Text = "Play a track to inspect its audio path.";
-        SignalNotice.Visibility = Visibility.Collapsed;
-        SignalStages.Children.Clear();
-        HardwareReadbackPanel.Visibility = Visibility.Collapsed;
-        HardwareMuteButton.Visibility = Visibility.Collapsed;
-        hardwareMute = null;
-        nextReadback = 0;
+        lastSignal = signal;
+        PostGlassroom(new { v = 1, @event = "signal", data = SignalData(session, signal) });
     }
 
-    private void ShowSignalPath(Playback session)
+    private object SignalData(Playback session, Signal signal)
     {
-        var source = session.CurrentTrack;
-        var snapshot = session.ReadProcessing(out bool applied, out bool pending);
-        bool hardware = session.OutputRoute != Route.NativeDsd && session.Device.HardwareVolume &&
-            outputProfile.VolumeMode == VolumeMode.Hardware;
-        var current = (session, source, snapshot, hardware);
-        if (signalView != current)
+        double[] spectrum = [];
+        if (signal.Waveform.Length > 0)
         {
-            if (!ReferenceEquals(signalView?.Session, session))
+            for (int i = 0; i < fft.Length; i++)
             {
-                nextReadback = 0;
-                hardwareMute = null;
-                HardwareReadbackPanel.Visibility = Visibility.Collapsed;
-                HardwareMuteButton.Visibility = Visibility.Collapsed;
+                fft[i].X = i < signal.Waveform.Length ? signal.Waveform[i] * (float)FastFourierTransform.HannWindow(i, fft.Length) : 0;
+                fft[i].Y = 0;
             }
-            signalView = current;
-            var format = session.WaveFormat;
-            var route = new SignalRoute(session.OutputRoute, session.Device, format.SampleRate, session.OutputBits,
-                format.BitsPerSample, session.SourceChannels, session.OutputChannels, session.AsioDriver,
-                session.MinimumPhase, session.ImpulsePath);
-            var report = SignalPathReport.Describe(source, route, snapshot, hardware);
-            SignalPath.Text = $"{report.Verdict}\n{report.OutputSummary}";
-            SignalVerdict.Text = report.Verdict;
-            SignalVerdict.Foreground = report.ExactAtOutput ? accent : neutral;
-            SignalExplanation.Text = report.Explanation;
-            SignalStages.Children.Clear();
-            foreach (var stage in report.Stages)
+            FastFourierTransform.FFT(true, 9, fft);
+            spectrum = Enumerable.Range(0, 96).Select(index =>
             {
-                var heading = new StackPanel { Spacing = 2 };
-                heading.Children.Add(new TextBlock { Text = stage.Name, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-                heading.Children.Add(new TextBlock { Text = stage.Summary, Foreground = neutral, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
-                var row = new Expander
-                {
-                    Header = heading, IsExpanded = expandedSignalStages.Contains(stage.Name),
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Content = new TextBlock { Text = stage.Detail, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }
-                };
-                row.Expanding += (_, _) => expandedSignalStages.Add(stage.Name);
-                row.Collapsed += (_, _) => expandedSignalStages.Remove(stage.Name);
-                SignalStages.Children.Add(row);
-            }
+                int bin = (int)Math.Pow(255, index / 95.0);
+                return 20 * Math.Log10(Math.Max(1e-9, Math.Sqrt(fft[bin].X * fft[bin].X + fft[bin].Y * fft[bin].Y)));
+            }).ToArray();
         }
+        return new { source = signal.Source, output = signal.Output, signal.Waveform, signal.WaveChannel,
+            signal.TruePeak, signal.Lufs, signal.Correlation, signal.Phase, signal.LimiterReductionDb, spectrum,
+            sourceChannels = session.SourceChannels, outputChannels = session.OutputChannels };
+    }
+
+    private async Task<object?> ReadSignalReport()
+    {
+        if (playback is not { } session)
+            return null;
+        var snapshot = session.ReadProcessing(out bool applied, out bool pending);
+        var format = session.WaveFormat;
+        var route = new SignalRoute(session.OutputRoute, session.Device, format.SampleRate, session.OutputBits,
+            format.BitsPerSample, session.SourceChannels, session.OutputChannels, session.AsioDriver,
+            session.MinimumPhase, session.ImpulsePath);
+        var report = SignalPathReport.Describe(session.CurrentTrack, route, snapshot, HardwareVolume);
         string notice = !applied ? "Configured route. Waiting for the first audio block."
             : pending && session.IsProcessed ? "Showing delivered blocks. New DSP settings are still queued."
-            : session.State == PlaybackState.Paused ? "Paused. Showing the last delivered audio block."
-            : "";
-        if (SignalNotice.Text != notice)
+            : session.State == PlaybackState.Paused ? "Paused. Showing the last delivered audio block." : "";
+        bool asio = session.OutputRoute == Route.NativeDsd;
+        double? rate = asio ? session.ReadAsioSampleRate() : null;
+        HardwareOutput? hardware = null;
+        if (!asio)
         {
-            SignalNotice.Text = notice;
-            SignalNotice.Visibility = notice.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            try { hardware = await Task.Run(() => HardwareOutput.Read(session.Device.Id)); }
+            catch (Exception error) { Diagnostics.Write("Reading hardware controls", error); }
         }
-        if (ReferenceEquals(InspectorTabs.SelectedItem, SignalTab))
-            _ = RefreshHardwareReadback(session);
+        return ReferenceEquals(session, playback) ? new { report, notice, asio, rate, hardware } : null;
     }
 
-    private async Task RefreshHardwareReadback(Playback session, bool force = false)
+    private void SetHardwareMute(bool muted)
     {
-        if (readingHardware || (!force && Environment.TickCount64 < nextReadback))
-            return;
-        readingHardware = true;
-        nextReadback = Environment.TickCount64 + 1500;
-        try
-        {
-            if (session.OutputRoute == Route.NativeDsd)
-            {
-                string rate = session.ReadAsioSampleRate() is double value ? $"{value:N0} Hz" : "Unavailable";
-                HardwareReadbackText.Text = $"ASIO driver-reported sample rate · {rate}";
-                hardwareMute = null;
-                HardwareMuteButton.Visibility = Visibility.Collapsed;
-                HardwareReadbackPanel.Visibility = Visibility.Visible;
-                return;
-            }
-
-            var state = await Task.Run(() => HardwareOutput.Read(session.Device.Id));
-            if (!ReferenceEquals(playback, session))
-                return;
-            var rows = new List<string> { "Physical clock · unavailable through this Windows endpoint" };
-            if (state.Decibels is float db)
-                rows.Add($"Hardware volume · {db:0.0} dB ({state.Scalar:P0})\nRange {state.MinimumDb:0.#} to {state.MaximumDb:0.#} dB · step {state.StepDb:0.##} dB");
-            else
-                rows.Add("Hardware volume · unsupported by this endpoint");
-            hardwareMute = state.Muted;
-            HardwareMuteButton.Visibility = hardwareMute.HasValue ? Visibility.Visible : Visibility.Collapsed;
-            HardwareMuteButton.Content = hardwareMute == true ? "Unmute hardware" : "Mute hardware";
-            HardwareReadbackText.Text = string.Join("\n", rows);
-            HardwareReadbackPanel.Visibility = Visibility.Visible;
-        }
-        catch (Exception)
-        {
-            if (!ReferenceEquals(playback, session))
-                return;
-            HardwareReadbackText.Text = "Hardware readback is unavailable.";
-            HardwareReadbackPanel.Visibility = Visibility.Visible;
-            HardwareMuteButton.Visibility = Visibility.Collapsed;
-            hardwareMute = null;
-        }
-        finally { readingHardware = false; }
-    }
-
-    private async void ToggleHardwareMute(object sender, RoutedEventArgs args)
-    {
-        if (playback is not { } session || hardwareMute is not bool muted || session.OutputRoute == Route.NativeDsd)
-            return;
-        HardwareMuteButton.IsEnabled = false;
-        try
-        {
-            HardwareOutput.SetMute(session.Device.Id, !muted);
-            await RefreshHardwareReadback(session, force: true);
-        }
-        catch (Exception error) { ShowError("Setting hardware mute", error); }
-        finally { HardwareMuteButton.IsEnabled = true; }
+        if (playback is not { } session || session.OutputRoute == Route.NativeDsd)
+            throw new InvalidOperationException("Hardware mute is unavailable for this route.");
+        HardwareOutput.SetMute(session.Device.Id, muted);
     }
 }

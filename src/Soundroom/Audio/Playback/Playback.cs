@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
@@ -12,7 +14,8 @@ internal sealed record OutputDevice(string Id, string Name, int Rate, int Channe
 }
 internal readonly record struct Meter(float Peak, float Rms, long Clips);
 internal sealed record Signal(Meter[] Source, Meter[] Output, float[] Waveform, int WaveChannel,
-    double? TruePeak = null, double? Lufs = null, double? Correlation = null, PhasePoint[]? Phase = null);
+    double? TruePeak = null, double? Lufs = null, double? Correlation = null, PhasePoint[]? Phase = null,
+    double? LimiterReductionDb = null);
 internal sealed record ProcessingControls(DspSettings Dsp, float DigitalVolume);
 internal sealed record ProcessingSnapshot(ProcessingControls Controls, double NormalizationDb);
 
@@ -31,11 +34,13 @@ internal sealed class Playback : IWaveProvider, IDisposable
     private readonly Quantizer quantizer = new();
     private readonly bool exclusive;
     private readonly string? asioDriver;
-    private readonly LiveAnalysis? live;
+    private LiveAnalysis? live;
+    private int analysisEnabled = 1;
     private readonly ChannelMeter[] sourceMeters, outputMeters;
     private int measuredFrames;
     private readonly int meterInterval;
     private double intervalPeak;
+    private double? intervalLimiterReduction;
     private int remaining, bufferedOffset;
     private int waveChannel;
     private ProcessingControls controls;
@@ -43,8 +48,14 @@ internal sealed class Playback : IWaveProvider, IDisposable
     private Signal? signal;
     private bool disposed;
     private long framesRead;
+    private long binauralSourceFrames;
+    private long mediaEndFrame = long.MaxValue;
+    private int binauralTailRemaining = -1;
     private long consumedBoundary;
     private Track consumedTrack;
+    private readonly ConcurrentQueue<Track> consumedTransitions = new();
+    private readonly Func<bool>? canAdvance;
+    private int endedForOrder;
     private int bufferedPosition, transitionIndex;
     private AudioBuffer? audioBuffer;
     private Thread? producer;
@@ -61,6 +72,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
     {
         options ??= new();
         this.route = route;
+        canAdvance = options.CanAdvance;
         controls = new(settings, volume);
         this.offset = offset;
         consumedTrack = track;
@@ -83,6 +95,8 @@ internal sealed class Playback : IWaveProvider, IDisposable
         bool unmapped = SourceChannels.Any(x => x.StartsWith("Ch ", StringComparison.Ordinal));
         if (unmapped && route != Route.Downmix)
             throw new NotSupportedException("This layout has no known speaker mapping. Choose Stereo downmix.");
+        if (route is not (Route.Binaural or Route.Downmix) && Speakers.HasHeight(SourceChannels))
+            throw new NotSupportedException("Choose Binaural headphones or Stereo downmix for this height layout.");
         if (route == Route.Cable && device.Channels != 8)
             throw new InvalidOperationException("Choose an output configured for 7.1 in Windows Sound settings.");
         OutputChannels = route == Route.Cable ? Speakers.Surround71 :
@@ -112,14 +126,12 @@ internal sealed class Playback : IWaveProvider, IDisposable
         meterInterval = Math.Max(1, rate / 30);
         ImpulsePath = IsProcessed ? options.ImpulsePath : null;
         dsp = new StereoDsp(rate, ImpulsePath is not null ? ImpulseResponse.Load(ImpulsePath, rate) : null);
-        if (!dop)
-            live = new LiveAnalysis(rate, OutputChannels);
         var resampler = IsRaw ? null : options.ResamplingFilter(rate);
         if (route == Route.Binaural)
             binaural = new Binaural(rate, SourceChannels);
         decoder = new AudioSource(track, offset, rate, IsRaw ? direct!.Encoding : "f64le",
             resampler, options.Memory, options.Following, route, WaveFormat.BitsPerSample,
-            options.MinimumPhase, options.Sharper, options.Preparation, options.NextTrack, options.MemoryLimitMiB);
+            options.MinimumPhase, options.Sharper, options.Preparation, options.NextTrack, options.MemoryLimitMiB, canAdvance);
     }
 
     public string[] SourceChannels { get; }
@@ -128,12 +140,14 @@ internal sealed class Playback : IWaveProvider, IDisposable
     public PlaybackState State => output?.PlaybackState ?? PlaybackState.Stopped;
     public Signal? Latest => Volatile.Read(ref signal);
     public Track CurrentTrack => audioBuffer is null ? decoder.Current : Volatile.Read(ref consumedTrack);
+    public bool TryTakeTransition([NotNullWhen(true)] out Track? item) => consumedTransitions.TryDequeue(out item);
     public double Position
     {
         get
         {
             long boundary = audioBuffer is null ? decoder.Boundary : Interlocked.Read(ref consumedBoundary);
-            return Math.Max(0, (double)(Interlocked.Read(ref framesRead) - boundary) / rate + (boundary == 0 ? offset : 0));
+            long mediaFrames = Math.Min(Interlocked.Read(ref framesRead), Interlocked.Read(ref mediaEndFrame));
+            return Math.Max(0, (double)(mediaFrames - boundary) / rate + (boundary == 0 ? offset : 0));
         }
     }
     public int Underruns => Volatile.Read(ref underruns);
@@ -209,7 +223,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
 
     private void OutputStopped(object? sender, StoppedEventArgs args)
     {
-        var error = args.Exception ?? Volatile.Read(ref decoderFailure);
+        var error = args.Exception ?? (Volatile.Read(ref endedForOrder) == 0 ? Volatile.Read(ref decoderFailure) : null);
         if (error is null && IsRaw && Underruns > 0)
             error = new IOException("The source stopped supplying audio in time. Press Play to resume.");
         Stopped?.Invoke(this, error is null ? args : new StoppedEventArgs(error));
@@ -250,6 +264,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
             IsProcessed && requested.Dsp.Enabled ? requested.Dsp.NormalizationGain(CurrentTrack) : 0);
     }
     public void Inspect(int channel) => Volatile.Write(ref waveChannel, Math.Clamp(channel, 0, SourceChannels.Length - 1));
+    public void SetAnalysisEnabled(bool enabled) => Volatile.Write(ref analysisEnabled, enabled ? 1 : 0);
 
     public int Read(byte[] buffer, int offset, int count)
     {
@@ -290,7 +305,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
     {
         try
         {
-            while (Volatile.Read(ref stopping) == 0)
+            while (Volatile.Read(ref stopping) == 0 && Volatile.Read(ref endedForOrder) == 0)
             {
                 if (queue.Writable() is not { } block)
                 {
@@ -330,7 +345,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
 
     private int ReadBuffered(AudioBuffer queue, byte[] buffer, int offset, int count)
     {
-        if (Volatile.Read(ref stopping) != 0 || (IsRaw && Underruns != 0))
+        if (Volatile.Read(ref stopping) != 0 || Volatile.Read(ref endedForOrder) != 0 || (IsRaw && Underruns != 0))
             return 0;
         int written = 0;
         while (written < count)
@@ -351,6 +366,16 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 return count;
             }
             int take = Math.Min(count - written, block.Length - bufferedPosition);
+            if (transitionIndex < block.Transitions.Count && canAdvance?.Invoke() == false)
+            {
+                long framesToBoundary = block.Transitions[transitionIndex].Frame - Interlocked.Read(ref framesRead);
+                if (framesToBoundary == 0)
+                {
+                    Volatile.Write(ref endedForOrder, 1);
+                    break;
+                }
+                take = (int)Math.Min(take, framesToBoundary * WaveFormat.BlockAlign);
+            }
             Buffer.BlockCopy(block.Data, bufferedPosition, buffer, offset + written, take);
             written += take;
             bufferedPosition += take;
@@ -360,6 +385,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 var transition = block.Transitions[transitionIndex++];
                 Interlocked.Exchange(ref consumedBoundary, transition.Frame);
                 Volatile.Write(ref consumedTrack, transition.Track);
+                consumedTransitions.Enqueue(transition.Track);
             }
             Volatile.Write(ref signal, block.Signal);
             Volatile.Write(ref deliveredProcessing, block.Processing);
@@ -374,10 +400,13 @@ internal sealed class Playback : IWaveProvider, IDisposable
 
     private bool Fill(List<(Track Track, long Frame)>? transitions = null, bool publishEveryBlock = true)
     {
-        int read = decoder.Read(input, transitions);
-        if (read == 0)
+        int prefetchWaitMs = audioBuffer is not { } queue ? -1 : State != PlaybackState.Playing ? 500 :
+            (int)Math.Clamp((long)queue.Queued * Block * 1000 / rate - 100, 0, 125);
+        int read = binauralTailRemaining < 0 ? decoder.Read(input, transitions, prefetchWaitMs) : 0;
+        int sourceFrames = read / (IsRaw ? WaveFormat.BlockAlign : sizeof(double) * SourceChannels.Length);
+        int frames = binaural is null ? sourceFrames : BinauralOutputFrames(sourceFrames);
+        if (frames == 0)
             return false;
-        int frames = read / (IsRaw ? WaveFormat.BlockAlign : sizeof(double) * SourceChannels.Length);
         var current = Volatile.Read(ref controls);
         var currentSettings = current.Dsp;
         double normalizationDb = IsProcessed && currentSettings.Enabled
@@ -400,7 +429,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
             Array.Copy(source, rendered, source.Length);
         }
         else
-            Buffer.BlockCopy(input, 0, source, 0, frames * SourceChannels.Length * sizeof(double));
+            Buffer.BlockCopy(input, 0, source, 0, sourceFrames * SourceChannels.Length * sizeof(double));
         if (binaural is not null)
             binaural.Render(source, rendered);
         else if (!IsRaw)
@@ -423,11 +452,30 @@ internal sealed class Playback : IWaveProvider, IDisposable
             }
         }
 
+        remaining = frames * WaveFormat.BlockAlign;
+        bufferedOffset = 0;
+        if (Volatile.Read(ref analysisEnabled) == 0)
+        {
+            if (live is not null)
+            {
+                live = null;
+                producedSignal = null;
+                measuredFrames = 0;
+                intervalPeak = 0;
+                intervalLimiterReduction = null;
+                ResetMeterWindow(sourceMeters);
+                ResetMeterWindow(outputMeters);
+            }
+            return remaining != 0;
+        }
+        live ??= new(rate, OutputChannels);
         Accumulate(source, frames, sourceMeters);
         Accumulate(rendered, frames, outputMeters);
         measuredFrames += frames;
-        var stats = live?.Measure(rendered, frames);
-        intervalPeak = Math.Max(intervalPeak, stats?.TruePeak ?? 0);
+        var stats = live.Measure(rendered, frames);
+        intervalPeak = Math.Max(intervalPeak, stats.TruePeak);
+        if (IsProcessed && dsp.LimiterReductionDb is double reduction)
+            intervalLimiterReduction = Math.Max(intervalLimiterReduction ?? 0, reduction);
         if (publishEveryBlock || producedSignal is null || measuredFrames >= meterInterval || read < input.Length)
         {
             int channel = Volatile.Read(ref waveChannel);
@@ -435,13 +483,31 @@ internal sealed class Playback : IWaveProvider, IDisposable
             for (int i = 0; i < frames; i++)
                 waveform[i] = (float)source[i * SourceChannels.Length + channel];
             producedSignal = new Signal(Snapshot(sourceMeters, measuredFrames), Snapshot(outputMeters, measuredFrames),
-                waveform, channel, stats.HasValue ? intervalPeak : null, stats?.Lufs, stats?.Correlation, live?.Scope(rendered, frames));
+                waveform, channel, intervalPeak, stats.Lufs, stats.Correlation, live.Scope(rendered, frames), intervalLimiterReduction);
             measuredFrames = 0;
             intervalPeak = 0;
+            intervalLimiterReduction = null;
         }
-        remaining = frames * WaveFormat.BlockAlign;
-        bufferedOffset = 0;
         return remaining != 0;
+    }
+
+    private int BinauralOutputFrames(int sourceFrames)
+    {
+        binauralSourceFrames += sourceFrames;
+        if (sourceFrames == Block)
+            return Block;
+
+        if (binauralTailRemaining < 0)
+        {
+            Interlocked.Exchange(ref mediaEndFrame, binauralSourceFrames);
+            binauralTailRemaining = binauralSourceFrames > 0 && canAdvance?.Invoke() != false
+                ? binaural!.TailFrames : 0;
+        }
+
+        // Fill the final partial DSP block before advancing the convolution to another block.
+        int tail = Math.Min(Block - sourceFrames, binauralTailRemaining);
+        binauralTailRemaining -= tail;
+        return sourceFrames + tail;
     }
 
     private void Mix(int frames)
@@ -524,6 +590,15 @@ internal sealed class Playback : IWaveProvider, IDisposable
             meter.Sum = 0;
         }
         return snapshot;
+    }
+
+    private static void ResetMeterWindow(ChannelMeter[] meters)
+    {
+        foreach (ref var meter in meters.AsSpan())
+        {
+            meter.Peak = 0;
+            meter.Sum = 0;
+        }
     }
 
     public void Dispose()
