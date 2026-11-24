@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
-using NAudio.Wave;
 using Windows.Storage.Streams;
 
 namespace Soundroom;
@@ -82,13 +81,7 @@ public sealed partial class MainWindow
         string key = WebText(args, "id");
         if (key.Length == 0)
         {
-            if (playback is { State: not PlaybackState.Playing } session)
-            {
-                session.Play();
-                RememberPlayed(session.CurrentTrack.Key);
-            }
-            else if (playback is null && track is { } selected)
-                await StartAsync(resumePosition >= selected.Duration ? 0 : resumePosition);
+            await ResumePlaybackAsync();
             return;
         }
         await libraryInitialization;

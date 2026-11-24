@@ -1,6 +1,6 @@
 # Glassroom
 
-A standalone Windows 11 UI foundation with a Win32 C++ WebView2 host and a React, TypeScript, Tailwind CSS, and Motion frontend. The supplied Soundroom workspace contains a WinUI 3/C# playback project and its native runtime dependencies. Glassroom lives alongside it as a starter for the C++ engine described in the request.
+Glassroom contains the React, TypeScript, Tailwind CSS, and Motion frontend shared by MP4A and its demos. The production MP4A installer uses the WinUI 3 and C# host in `src/Soundroom`. The optional C++ host exercises the same frontend and bridge with a simulated engine.
 
 ## Run the starter
 
@@ -56,7 +56,7 @@ Glassroom/
 
 ## Host and bridge
 
-**Embed WebView2 directly in the C++ process.** Win32 retains ownership of the window, audio lifecycle, and engine objects. WebView2 provides the compositor, accessibility tree, and the React stack. Tauri adds a Rust integration layer and may add an extra IPC hop when the engine runs as a sidecar. WinUI 3 is a reasonable all-native choice, especially for the C# project in this workspace. Direct WebView2 fits the requested C++/React combination and requires one application-level native/web protocol. Audio samples stay in the existing engine. [Microsoft WebView2 Win32 guide](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/win32)
+In the C++ demo, Win32 owns the window and engine objects. WebView2 presents the React UI and exchanges structured messages with the host. Audio samples stay in the engine. [Microsoft WebView2 Win32 guide](https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/win32)
 
 ```mermaid
 flowchart LR
@@ -85,8 +85,7 @@ The v1 request envelope is `{ v: 1, id, method, args }`. A reply uses `{ v: 1, i
 | --- | --- |
 | Type scale | Segoe UI Variable with Segoe UI fallback. Labels 11–12 px, body 14 px, section headings 22 px, route headings 34–57 px, and the featured heading up to 65 px. |
 | Dark surfaces | Ink `#f5f5f5` on `#080808`, translucent charcoal glass, and silver `#ebebeb` controls. |
-| Light surfaces | Ink `#261e36` on `#f0ebf7`, translucent pearl glass and plum `#593687` controls. |
-| Artwork ambience | Sample a 24 × 24 canvas once per cover and choose up to three distinct color clusters. Paint soft radial gradients over a blurred 8 × 8 artwork sample and crossfade the old and new layers. Cache up to 128 palettes. Palette extraction and audio progress have independent update paths. |
+| Artwork ambience | Sample a 24 × 24 canvas once per cover. Paint grayscale radial gradients over a blurred 8 × 8 artwork sample and crossfade the layers. Cache up to 128 palettes. Palette extraction and audio progress have independent update paths. |
 | Windows material | On Windows 11 build 22621+, the host asks DWM for Mica and extends the frame through the client area. Use `Glassroom.exe --acrylic` to preview Desktop Acrylic. WebView2 is transparent when DWM accepts the extended backdrop. The host uses an opaque theme color if the backdrop call fails. In-app glass is CSS-backed. |
 | Motion | Shared layout ID for artwork between the dock and expanded player. Spring-driven navigation highlight and queue drawer. Short route fades and translations. Motion follows reduced-motion preferences. |
 | Scrolling | Use native scroll containers and overscanned TanStack virtual rows. No JS smooth-scroll loop controls the library. Only the visible playhead is painted on animation frames. Expanded lyrics change the active line only when its timestamp boundary changes. |

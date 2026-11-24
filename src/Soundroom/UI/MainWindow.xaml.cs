@@ -15,6 +15,7 @@ public sealed partial class MainWindow : Window
     private Track? track;
     private Playback? playback;
     private CancellationTokenSource? preparingPlayback;
+    private bool playbackRequested;
     private int channel;
     private double resumePosition;
     private string status = "";
@@ -27,13 +28,16 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ApplyGlassroomTheme(dark: true);
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        int width = Math.Clamp(work.Width - 32, 320, 1440);
-        int height = Math.Clamp(work.Height - 32, 250, 960);
+        double scale = WindowPresentation.DpiScale(WindowNative.GetWindowHandle(this));
+        int Pixels(int units) => (int)Math.Round(units * scale);
+        int width = Math.Clamp(work.Width - Pixels(32), Pixels(320), Pixels(1440));
+        int height = Math.Clamp(work.Height - Pixels(32), Pixels(250), Pixels(960));
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
             work.X + (work.Width - width) / 2, work.Y + (work.Height - height) / 2, width, height));
         Closed += (_, _) =>
         {
             ready = false;
+            CloseMediaControls();
             deviceTimer.Stop();
             glassroomTimer.Stop();
             glassroom?.Close();
@@ -65,7 +69,10 @@ public sealed partial class MainWindow : Window
     {
         WindowSurface.Loaded -= OpenGlassroomOnLoad;
         if (ready)
+        {
+            InitializeMediaControls();
             InitializeGlassroom();
+        }
     }
 
     private void RefreshPresentation()
@@ -107,7 +114,58 @@ public sealed partial class MainWindow : Window
     }
 
     private Task RestartPlaybackAsync() => track is null ? Task.CompletedTask :
-        StartAsync(WebPosition(), playback?.State == PlaybackState.Playing || preparingPlayback is not null);
+        StartAsync(WebPosition(), playbackRequested);
+
+    private Task SeekAsync(string key, double seconds)
+    {
+        if (playback is { } session)
+            SyncTrack(session);
+        if (track is not { } current || current.Key != key)
+            return Task.CompletedTask;
+        if (!double.IsFinite(seconds))
+            throw new InvalidOperationException("The seek position is invalid.");
+        return StartAsync(Math.Clamp(seconds, 0, current.Duration), playbackRequested, countPlay: false);
+    }
+
+    private void PausePlayback()
+    {
+        playbackRequested = false;
+        if (playback?.State == PlaybackState.Playing)
+            playback.Pause();
+    }
+
+    private async Task ResumePlaybackAsync()
+    {
+        if (track is not { } selected || playbackRequested)
+            return;
+        if (preparingPlayback is not null)
+        {
+            playbackRequested = true;
+            return;
+        }
+        if (playback is not { } session)
+        {
+            await StartAsync(resumePosition >= selected.Duration ? 0 : resumePosition);
+            return;
+        }
+        playbackRequested = true;
+        try
+        {
+            await session.WaitUntilBufferedAsync(libraryLifetime.Token);
+            if (!ready || !playbackRequested || !ReferenceEquals(playback, session) || session.State == PlaybackState.Playing)
+                return;
+            session.Play();
+            RememberPlayed(session.CurrentTrack.Key);
+        }
+        catch (Exception error)
+        {
+            if (ready && ReferenceEquals(session, playback))
+            {
+                Stop();
+                ShowError($"Playing {selected.Title}", error);
+            }
+        }
+    }
 
     private async void AddFiles(object sender, RoutedEventArgs args)
     {
@@ -193,7 +251,7 @@ public sealed partial class MainWindow : Window
         finally { importing = false; }
     }
 
-    private async Task StartAsync(double seconds, bool play = true)
+    private async Task StartAsync(double seconds, bool play = true, bool countPlay = true)
     {
         int request = ++generation;
         preparingPlayback?.Cancel();
@@ -206,6 +264,7 @@ public sealed partial class MainWindow : Window
             status = "Select a Windows audio output.";
             return;
         }
+        playbackRequested = play;
         using var preparation = new CancellationTokenSource();
         preparingPlayback = preparation;
         try
@@ -255,16 +314,18 @@ public sealed partial class MainWindow : Window
             RefreshPresentation();
             status = "";
             RefreshVolumeMode();
-            if (play)
+            if (playbackRequested)
             {
                 status = "Buffering audio…";
                 await session.WaitUntilBufferedAsync(preparation.Token);
                 if (request != generation || !ready)
                     return;
                 status = "";
+                if (!playbackRequested)
+                    return;
                 session.Play();
                 RememberPlayed(selected.Key);
-                if (seconds == 0)
+                if (countPlay && seconds == 0)
                     CountPlay(selected);
             }
         }
@@ -284,6 +345,7 @@ public sealed partial class MainWindow : Window
 
     private void Stop()
     {
+        playbackRequested = false;
         var session = playback;
         playback = null;
         timer.Stop();

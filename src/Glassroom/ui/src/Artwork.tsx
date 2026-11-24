@@ -16,25 +16,33 @@ export function Artwork({ src, className = '', loading = 'lazy' }: {
   useEffect(() => {
     const element = container.current
     if (!src || !element) return
-    let active = true
+    let request: AbortController | undefined
     let observer: IntersectionObserver | undefined
     const start = () => {
-      void loadArtwork(src).then(url => {
-        if (active) setLoaded({ source: src, url })
+      if (request) return
+      const current = new AbortController()
+      request = current
+      void loadArtwork(src, loading === 'eager', current.signal).then(url => {
+        if (!current.signal.aborted) {
+          setLoaded({ source: src, url })
+          observer?.disconnect()
+        }
       })
+    }
+    const stop = () => {
+      request?.abort()
+      request = undefined
     }
     if (loading === 'eager' || cachedArtwork(src) !== undefined) {
       start()
     } else {
       observer = new IntersectionObserver(items => {
-        if (items.some(item => item.isIntersecting)) {
-          observer?.disconnect()
-          start()
-        }
-      }, { rootMargin: '160px' })
+        if (items.at(-1)?.isIntersecting) start()
+        else stop()
+      })
       observer.observe(element)
     }
-    return () => { active = false; observer?.disconnect() }
+    return () => { stop(); observer?.disconnect() }
   }, [src, loading])
 
   return <span ref={container} className={'artwork ' + className}>

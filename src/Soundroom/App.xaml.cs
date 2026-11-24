@@ -1,10 +1,21 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 
 namespace Soundroom;
 
 public partial class App : Application
 {
+    private static readonly IntPtr PerMonitorDpiAwareV2 = new(-4);
+
     private Window? window;
+
+    [ModuleInitializer]
+    internal static void InitializeDpiAwareness() => SetProcessDpiAwarenessContext(PerMonitorDpiAwareV2);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 
     public App()
     {

@@ -107,7 +107,7 @@ function Scrubber({ player, notify, active = true }: { player: Player; notify: N
 
   function commit(value: number) {
     if (!track) return
-    const operation = player.send('seek', { id: track.id, position: value })
+    const operation = player.seek(track.id, value)
     pending.current = operation
     paint(value)
     notify(operation.finally(() => {
@@ -288,7 +288,7 @@ function Lyrics({ player, id, notify }: { player: Player; id?: string; notify: N
   }, [active, data])
 
   function seek(line: Lyric) {
-    if (id) notify(player.send('seek', { id, position: line.at }))
+    if (id) notify(player.seek(id, line.at))
   }
 
   return <section className="lyrics" aria-label="Synced lyrics">

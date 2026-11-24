@@ -12,6 +12,8 @@ namespace Soundroom;
 public sealed partial class MainWindow
 {
     private const string GlassroomUrl = "https://mp4a.glassroom.test/index.html";
+    private const int RuntimeFileNotFound = unchecked((int)0x80070002);
+    private const int RuntimePathNotFound = unchecked((int)0x80070003);
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
     private readonly DispatcherTimer glassroomTimer = new() { Interval = TimeSpan.FromMilliseconds(125) };
     private Task libraryInitialization = Task.CompletedTask;
@@ -47,8 +49,20 @@ public sealed partial class MainWindow
         try
         {
             WindowSurface.Children.Add(view);
-            var environment = await CoreWebView2Environment.CreateWithOptionsAsync(
-                null, Path.Combine(Diagnostics.DataDirectory, "WebView2"), null);
+            CoreWebView2Environment environment;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateWithOptionsAsync(
+                    null, Path.Combine(Diagnostics.DataDirectory, "WebView2"), null);
+            }
+            catch (Exception error) when (error.HResult is RuntimeFileNotFound or RuntimePathNotFound)
+            {
+                if (ready && glassroom == view)
+                    GlassroomFailed(new InvalidOperationException(
+                        "Install the Microsoft Edge WebView2 Runtime, then select Reload Glassroom.", error),
+                        needsRuntime: true);
+                return;
+            }
             if (!ready || glassroom != view)
                 return;
             await view.EnsureCoreWebView2Async(environment);
@@ -92,7 +106,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private void GlassroomFailed(Exception error)
+    private void GlassroomFailed(Exception error, bool needsRuntime = false)
     {
         glassroomConnected = false;
         glassroomTimer.Stop();
@@ -103,12 +117,14 @@ public sealed partial class MainWindow
         }
         StartupPanel.Visibility = Visibility.Visible;
         StartupStatus.Text = Diagnostics.Report("Opening Glassroom", error);
+        GetWebViewRuntime.Visibility = needsRuntime ? Visibility.Visible : Visibility.Collapsed;
         RestartGlassroom.Visibility = Visibility.Visible;
     }
 
     private void ReloadGlassroom(object sender, RoutedEventArgs args)
     {
         RestartGlassroom.Visibility = Visibility.Collapsed;
+        GetWebViewRuntime.Visibility = Visibility.Collapsed;
         StartupStatus.Text = "Opening Glassroom…";
         if (glassroom is { } view)
         {
@@ -181,14 +197,10 @@ public sealed partial class MainWindow
                 await PlayFromGlassroom(args);
                 break;
             case "pause":
-                if (playback?.State == PlaybackState.Playing)
-                    playback.Pause();
+                PausePlayback();
                 break;
             case "seek":
-                if (track?.Key != WebText(args, "id") || track is null)
-                    throw new InvalidOperationException("The active track has changed.");
-                double position = Math.Clamp(args.GetProperty("position").GetDouble(), 0, track.Duration);
-                await StartAsync(position, playback?.State == PlaybackState.Playing);
+                await SeekAsync(WebText(args, "id"), args.GetProperty("position").GetDouble());
                 break;
             case "volume":
                 UpdateOutputVolume(Math.Clamp(args.GetProperty("value").GetDouble(), 0, 1) * 100);
@@ -315,6 +327,7 @@ public sealed partial class MainWindow
 
     private void PublishWebState(bool force)
     {
+        UpdateMediaControls(force);
         if (!glassroomConnected)
             return;
         var state = ReadWebStatus();

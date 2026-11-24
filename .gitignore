@@ -9,3 +9,16 @@ obj/
 artifacts/
 .vs/
 *.user
+.env
+.env.*
+!.env.example
+*.log
+*.dmp
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.exe
+*.pfx
+*.snk

@@ -1,8 +1,17 @@
 const coverOrigin = 'https://media.mp4a.glassroom.test/cover/'
 const byteLimit = 32 * 1024 * 1024
 const entryLimit = 768
+const parallelRequests = 2
 const entries = new Map<string, { url: string | null; bytes: number; expires: number }>()
-const pending = new Map<string, Promise<string | null>>()
+type Request = {
+  urgentConsumers: number
+  consumers: number
+  promise: Promise<string | null>
+  finish: (url: string | null) => void
+}
+const pending = new Map<string, Request>()
+const queued = new Map<string, Request>()
+let fetching = 0
 let retainedBytes = 0
 
 function evict(source: string) {
@@ -20,18 +29,14 @@ export function cachedArtwork(source: string): string | null | undefined {
   return entry.url
 }
 
-export function loadArtwork(source: string): Promise<string | null> {
-  if (!source.startsWith(coverOrigin)) return Promise.resolve(source)
-  const entry = entries.get(source)
-  if (entry) {
-    entries.delete(source)
-    entries.set(source, entry)
-    if (entry.expires > Date.now()) return Promise.resolve(entry.url)
-  }
-
-  let request = pending.get(source)
-  if (!request) {
-    request = fetch(source, { credentials: 'omit' }).then(async response => {
+function drain() {
+  while (fetching < parallelRequests && queued.size) {
+    const next = [...queued].find(([, request]) => request.urgentConsumers > 0) ?? queued.entries().next().value!
+    const [source, request] = next
+    const entry = entries.get(source)
+    queued.delete(source)
+    fetching++
+    void fetch(source, { credentials: 'omit' }).then(async response => {
       const missing = response.status === 204 || response.status === 404
       if (!response.ok && !missing) throw new Error('Artwork is unavailable.')
       const blob = missing ? null : await response.blob()
@@ -43,8 +48,44 @@ export function loadArtwork(source: string): Promise<string | null> {
       while (entries.size > entryLimit || retainedBytes > byteLimit)
         evict(entries.keys().next().value!)
       return url
-    }).catch(() => entry?.url ?? source).finally(() => pending.delete(source))
-    pending.set(source, request)
+    }).catch(() => entry?.url ?? source).then(request.finish).finally(() => {
+      fetching--
+      pending.delete(source)
+      drain()
+    })
   }
-  return request
+}
+
+export function loadArtwork(source: string, urgent: boolean, signal: AbortSignal): Promise<string | null> {
+  if (signal.aborted) return Promise.resolve(null)
+  if (!source.startsWith(coverOrigin)) return Promise.resolve(source)
+  const entry = entries.get(source)
+  if (entry) {
+    entries.delete(source)
+    entries.set(source, entry)
+    if (entry.expires > Date.now()) return Promise.resolve(entry.url)
+  }
+
+  let request = pending.get(source)
+  if (!request) {
+    let finish!: Request['finish']
+    const promise = new Promise<string | null>(resolve => { finish = resolve })
+    request = { urgentConsumers: 0, consumers: 0, promise, finish }
+    pending.set(source, request)
+    queued.set(source, request)
+  }
+  if (urgent) request.urgentConsumers++
+  request.consumers++
+  const shared = request
+  const cancel = () => {
+    shared.consumers--
+    if (urgent) shared.urgentConsumers--
+    if (shared.consumers || queued.get(source) !== shared) return
+    queued.delete(source)
+    pending.delete(source)
+    shared.finish(null)
+  }
+  signal.addEventListener('abort', cancel, { once: true })
+  drain()
+  return shared.promise.finally(() => signal.removeEventListener('abort', cancel))
 }

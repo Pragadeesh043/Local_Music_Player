@@ -11,6 +11,12 @@ internal static class WindowPresentation
     private const int LayeredOrTransparent = 0x80000 | 0x20;
     private const int RectSize = 4 * sizeof(int);
 
+    public static double DpiScale(IntPtr window)
+    {
+        uint dpi = GetDpiForWindow(window);
+        return (dpi == 0 ? 96 : dpi) / 96d;
+    }
+
     public static bool IsExposed(IntPtr window)
     {
         if (window == IntPtr.Zero)
@@ -42,6 +48,8 @@ internal static class WindowPresentation
             Left <= other.Left && Top <= other.Top && Right >= other.Right && Bottom >= other.Bottom;
     }
 
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr window);

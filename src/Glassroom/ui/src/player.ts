@@ -9,6 +9,8 @@ export class Player {
   private listeners = new Set<() => void>()
   private clock = { position: 0, at: performance.now() }
   private operations = Promise.resolve()
+  private seekRevision = 0
+  private queuedSeek?: { args: Commands['seek']['args']; operation: Promise<null> }
 
   constructor(public bridge: Bridge) {
     let receivedState = false
@@ -48,7 +50,29 @@ export class Player {
     this.clock.position + (this.state.playing ? (performance.now() - this.clock.at) / 1000 : 0)))
 
   send<K extends Command>(method: K, args: Commands[K]['args']) {
+    this.queuedSeek = undefined
+    if (method === 'next' || method === 'previous' || method === 'jump' || (method === 'play' && 'id' in args && args.id)) {
+      this.seekRevision++
+    }
     const operation = this.operations.then(() => this.bridge.request(method, args))
+    this.operations = operation.then(() => undefined, () => undefined)
+    return operation
+  }
+
+  seek(id: string, position: number) {
+    const queued = this.queuedSeek
+    if (queued?.args.id === id) {
+      queued.args.position = position
+      return queued.operation
+    }
+    const args = { id, position }
+    const revision = this.seekRevision
+    const operation = this.operations.then(() => {
+      if (this.queuedSeek?.args === args) this.queuedSeek = undefined
+      if (revision !== this.seekRevision || this.state.track?.id !== id) return null
+      return this.bridge.request('seek', args)
+    })
+    this.queuedSeek = { args, operation }
     this.operations = operation.then(() => undefined, () => undefined)
     return operation
   }

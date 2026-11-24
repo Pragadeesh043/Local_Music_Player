@@ -69,7 +69,7 @@ internal static class Media
         catch (Win32Exception error) when (error.NativeErrorCode == 2)
         {
             string name = System.IO.Path.GetFileName(tool);
-            throw new IOException($"Could not find {name}. Check that the executable is installed and available on PATH.", error);
+            throw new IOException($"Could not find {name}. Install FFmpeg and put ffmpeg.exe and ffprobe.exe in MP4A's Tools\\FFmpeg folder or on PATH.", error);
         }
     }
 
@@ -173,9 +173,11 @@ internal static class Media
         string[] encoding = webp
             ? ["-c:v", "libwebp", "-quality", "78", "-compression_level", "4", "-pix_fmt", "yuva420p", "-f", "webp"]
             : ["-c:v", "png", "-pix_fmt", "rgba", "-f", "image2pipe"];
-        using var process = Start("ffmpeg", ["-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", path,
+        // These commands convert one image. A full filter and codec thread pool adds overhead per cover.
+        using var process = Start("ffmpeg", ["-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe",
+            "-filter_threads", "1", "-threads", "1", "-i", path,
             "-map", stream, "-frames:v", "1", "-vf",
-            $"scale={size}:{size}:force_original_aspect_ratio=decrease", .. encoding, "pipe:1"]);
+            $"scale={size}:{size}:force_original_aspect_ratio=decrease", "-threads", "1", .. encoding, "pipe:1"]);
         using var stop = cancellation.Register(() =>
         {
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); }

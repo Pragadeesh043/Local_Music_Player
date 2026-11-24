@@ -61,9 +61,9 @@ export function Ambient({ artwork }: { artwork?: string }) {
   const [layer, setLayer] = useState({ source: '', palette: defaultPalette })
   useEffect(() => {
     if (!artwork) return
-    let active = true
-    void loadArtwork(artwork).then(async url => {
-      if (!active) return
+    const request = new AbortController()
+    void loadArtwork(artwork, true, request.signal).then(async url => {
+      if (request.signal.aborted) return
       if (!url) {
         setLayer({ source: '', palette: defaultPalette })
         return
@@ -78,9 +78,9 @@ export function Ambient({ artwork }: { artwork?: string }) {
         palettes.set(url, cached)
       }
       const palette = await cached
-      if (active) setLayer({ source: url, palette })
+      if (!request.signal.aborted) setLayer({ source: url, palette })
     })
-    return () => { active = false }
+    return () => request.abort()
   }, [artwork])
 
   const visible = artwork ? layer : { source: '', palette: defaultPalette }

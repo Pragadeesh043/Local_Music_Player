@@ -26,9 +26,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Native\SteamAudio-*.md" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Native\SACD\*" Condition="Exists('Native\SACD')">
-      <Link>Tools\SACD\%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <Content Include="Native\SACD\UPSTREAM.md" Link="Tools\SACD\UPSTREAM.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

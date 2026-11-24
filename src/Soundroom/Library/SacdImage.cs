@@ -45,7 +45,8 @@ internal static class SacdImage
                 }
                 catch (IOException error) when (error.InnerException is System.ComponentModel.Win32Exception { NativeErrorCode: 2 })
                 {
-                    throw new IOException("SACD ISO import requires the EuFlo sacd_extract command on PATH.", error);
+                    throw new IOException(
+                        "SACD ISO import requires EuFlo sacd_extract. Put sacd_extract.exe in MP4A's Tools\\SACD folder or on PATH.", error);
                 }
             }
             else

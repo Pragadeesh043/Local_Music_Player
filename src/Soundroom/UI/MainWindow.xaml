@@ -6,6 +6,8 @@
         <StackPanel x:Name="StartupPanel" Margin="28" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock Text="MP4A" FontSize="26" FontWeight="SemiBold" />
             <TextBlock x:Name="StartupStatus" Text="Opening Glassroom…" TextWrapping="Wrap" MaxWidth="480" />
+            <HyperlinkButton x:Name="GetWebViewRuntime" Visibility="Collapsed" Content="Download WebView2 Runtime"
+                             NavigateUri="https://developer.microsoft.com/microsoft-edge/webview2/#download-section" />
             <Button x:Name="RestartGlassroom" Visibility="Collapsed" Content="Reload Glassroom" Click="ReloadGlassroom" />
         </StackPanel>
     </Grid>
