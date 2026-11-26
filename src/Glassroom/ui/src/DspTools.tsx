@@ -63,17 +63,20 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
       { values: view.left.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72) },
     ]} />
     <fieldset className="tool-form" disabled={busy}>
-      <div className="tool-fields">
-        {([['Enable DSP', 'enabled'], ['Invert polarity (180°)', 'invert'], ['Enable stereo peak limiter', 'limiter']] as const)
-          .map(([label, key]) => <label key={key} className="tool-check"><input type="checkbox" checked={draft[key]}
-            onChange={event => update(key, event.target.checked)} /> {label}</label>)}
-        {levels.map(([label, key, min, max, step]) => <label key={key}>{label} · {draft[key].toFixed(key === 'balance' ? 2 : 1)}
-          <input type="range" min={min} max={max} step={step} value={draft[key]} onChange={event => update(key, Number(event.target.value))} />
-        </label>)}
-        {modes.map(([label, key, options]) => <label key={key}>{label}<select value={draft[key]} onChange={event => update(key, Number(event.target.value))}>
-          {options.map((option, index) => <option key={option} value={index}>{option}</option>)}
-        </select></label>)}
-      </div>
+      <section className="tool-card">
+        <h3>Processing controls</h3>
+        <div className="tool-fields">
+          {([['Enable DSP', 'enabled'], ['Invert polarity (180°)', 'invert'], ['Enable stereo peak limiter', 'limiter']] as const)
+            .map(([label, key]) => <label key={key} className="tool-check"><input type="checkbox" checked={draft[key]}
+              onChange={event => update(key, event.target.checked)} /> {label}</label>)}
+          {levels.map(([label, key, min, max, step]) => <label key={key}>{label} · {draft[key].toFixed(key === 'balance' ? 2 : 1)}
+            <input type="range" min={min} max={max} step={step} value={draft[key]} onChange={event => update(key, Number(event.target.value))} />
+          </label>)}
+          {modes.map(([label, key, options]) => <label key={key}>{label}<select value={draft[key]} onChange={event => update(key, Number(event.target.value))}>
+            {options.map((option, index) => <option key={option} value={index}>{option}</option>)}
+          </select></label>)}
+        </div>
+      </section>
       <details><summary>Parametric EQ</summary>
         <div className="tool-form tool-section">
           {draft.parametric.map((band, i) => <div className="eq-band" key={i}>
@@ -101,11 +104,14 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
           <input type="range" min={-12} max={12} step={.5} value={draft.graphic[i]} onChange={event =>
             update('graphic', draft.graphic.map((value, index) => i === index ? Number(event.target.value) : value))} /></label>)}
       </div></details>
-      <div className="tool-actions">
-        <button type="button" className="load-more" onClick={() => run('impulse')}>Load FIR WAV</button>
-        <button type="button" className="load-more" disabled={!view.impulse} onClick={() => run('clearImpulse')}>Clear FIR</button>
-        {view.impulse && <span>{view.impulse}</span>}
-      </div>
+      <section className="tool-card">
+        <h3>FIR convolution</h3>
+        <div className="tool-actions">
+          <button type="button" className="load-more" onClick={() => run('impulse')}>Load FIR WAV</button>
+          <button type="button" className="load-more" disabled={!view.impulse} onClick={() => run('clearImpulse')}>Clear FIR</button>
+          {view.impulse && <span>{view.impulse}</span>}
+        </div>
+      </section>
       <div className="tool-fields">
         <label>DSP preset<select value={preset} onChange={event => setPreset(event.target.value)}>
           <option value="">Choose a preset</option>{view.presets.map(title => <option key={title}>{title}</option>)}

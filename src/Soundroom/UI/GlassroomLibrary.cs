@@ -155,7 +155,8 @@ public sealed partial class MainWindow
 
     private static WebTrack ToWebTrack(Track item) =>
         new(item.Key, item.Title, item.Artist, AlbumId(item), item.Album, WebArtwork(item), item.Duration,
-            int.TryParse(item.Tag("track", "tracknumber").Split('/')[0], out int number) ? number : 0);
+            int.TryParse(item.Tag("track", "tracknumber").Split('/')[0], out int number) ? number : 0,
+            item.Codec, item.Rate, item.Bits, item.Channels, item.BitRate);
 
     private static WebAlbum ToWebAlbum(Track item)
     {

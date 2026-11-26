@@ -1,7 +1,8 @@
-import { Activity, AudioLines, Compass, Disc3, FilePlus2, FolderOpen, Headphones, LibraryBig, ListFilter, ListMusic, Maximize, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Compass, Disc3, FilePlus2, FolderOpen, LibraryBig, ListFilter, ListMusic, RefreshCw, Search, X } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Ambient } from './Ambient'
+import type { CSSProperties } from 'react'
+import { Ambient, useAmbient } from './Ambient'
 import type { DesktopAction } from './bridge'
 import { CatalogView } from './Library'
 import type { Detail, Route } from './Library'
@@ -13,6 +14,7 @@ import { SignalTools } from './SignalTools'
 import { ToolDialog } from './ToolDialog'
 import { Dock, IconButton, NowPlaying, QueueRail, spring } from './NowPlaying'
 import { Player, usePlayer, useResource } from './player'
+import type { AudioTool } from './LiveTelemetry'
 
 const navigation = [
   { title: 'Discover', Icon: Compass },
@@ -20,7 +22,7 @@ const navigation = [
   { title: 'Library', Icon: LibraryBig },
   { title: 'Playlists', Icon: ListMusic },
 ] as const
-type Tool = 'Output settings' | 'Library tools' | 'DSP' | 'Signal inspector' | 'Track details'
+type Tool = AudioTool | 'Library tools' | 'Track details'
 const queueRailMedia = '(min-width: 1160px)'
 
 export function App({ player }: { player: Player }) {
@@ -40,6 +42,7 @@ export function App({ player }: { player: Player }) {
   const opener = useRef<HTMLElement | null>(null)
   const restoreFocus = useRef(false)
   const { track, desktop } = usePlayer(player)
+  const ambient = useAmbient(track?.artwork)
   const catalogRevision = desktop?.catalogRevision
   const loadPlaylists = useCallback(() => player.bridge.request('library', { kind: 'playlists', offset: 0, limit: 5 }),
     [player, catalogRevision])
@@ -104,7 +107,7 @@ export function App({ player }: { player: Player }) {
 
   return <MotionConfig reducedMotion="user">
     <LayoutGroup>
-      <div className="app-shell" onKeyDown={event => {
+      <div className="app-shell" style={{ '--album-primary': ambient.colors[0], '--album-secondary': ambient.colors[1] } as CSSProperties} onKeyDown={event => {
         if (desktop && (event.key === 'F11' || (desktop.fullscreen && event.key === 'Escape' &&
           !expanded && !tool && event.target !== searchInput.current))) {
           event.preventDefault()
@@ -115,10 +118,10 @@ export function App({ player }: { player: Player }) {
           searchInput.current?.focus()
         }
       }}>
-        <Ambient artwork={track?.artwork} />
-        <div className="workspace" inert={expanded} data-queue-rail={wide && showRail}>
+        <Ambient layer={ambient} />
+        <div className="workspace" inert={expanded} aria-hidden={expanded || undefined} data-queue-rail={wide && showRail}>
           <aside className="sidebar" aria-label="Music navigation">
-            <div className="brand"><span className="brand-symbol"><AudioLines size={21} /></span><strong>MP4A</strong></div>
+            <div className="brand"><img className="brand-symbol" src="./brand.png" alt="" width="38" height="38" /><strong>MP4A</strong></div>
             <nav>
               <button type="button" className="nav-item" title="Search" onClick={() => searchInput.current?.focus()}>
                 <Search size={19} /><span>Search</span>
@@ -153,12 +156,6 @@ export function App({ player }: { player: Player }) {
                   onKeyDown={event => { if (event.key === 'Escape') { setSearch(''); setQuery('') } }} />
                 {search ? <IconButton label="Clear search" action={() => { setSearch(''); setQuery(''); searchInput.current?.focus() }}><X size={15} /></IconButton> : <kbd>Ctrl K</kbd>}
               </div>
-              {desktop && <>
-                <IconButton label="Output settings" action={() => setTool('Output settings')}><Headphones size={18} /></IconButton>
-                <IconButton label="DSP" action={() => setTool('DSP')}><SlidersHorizontal size={18} /></IconButton>
-                <IconButton label="Inspect signal" action={() => setTool('Signal inspector')}><Activity size={18} /></IconButton>
-                <IconButton label="Toggle full screen" action={() => desktopAction('fullscreen')}><Maximize size={17} /></IconButton>
-              </>}
             </header>
             <AnimatePresence initial={false} mode="wait">
               <motion.div className="route-frame" key={JSON.stringify([route, query, folder, detail?.item.id ?? '', desktop?.catalogRevision ?? 0])}
@@ -174,12 +171,13 @@ export function App({ player }: { player: Player }) {
             </AnimatePresence>
             {desktop?.status && <div className="desktop-status" role="status">{desktop.status}</div>}
           </main>
-          {wide && showRail && <QueueRail player={player} notify={notify} expand={expand} />}
+          {wide && showRail && !expanded && <QueueRail player={player} notify={notify} openTool={setTool} />}
           <Dock player={player} notify={notify} expand={expand} active={!expanded}
+            openTool={setTool}
             queueVisible={wide ? showRail : undefined} toggleQueue={() => wide ? setShowRail(visible => !visible) : expand(true)} />
         </div>
         <AnimatePresence>
-          {expanded && <NowPlaying player={player} notify={notify} close={close} queueOpen={queue} setQueueOpen={setQueue}
+          {expanded && <NowPlaying player={player} ambient={ambient} notify={notify} close={close} queueOpen={queue} setQueueOpen={setQueue} openTool={setTool}
             inspect={desktop && track ? () => { setFileId(track.id); setTool('Track details') } : undefined} />}
         </AnimatePresence>
         {tool && <ToolDialog key={tool} title={tool} close={() => setTool(null)}>

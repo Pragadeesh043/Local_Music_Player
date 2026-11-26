@@ -3,10 +3,8 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { loadArtwork } from './artworkResource'
 
-const fallback = ['72 72 72', '38 38 38', '55 55 55']
-type Palette = { colors: string[]; backdrop?: string }
-const defaultPalette: Palette = { colors: fallback }
-const palettes = new Map<string, Promise<Palette>>()
+const fallback = ['67 142 177', '165 92 56', '93 76 139']
+const palettes = new Map<string, Promise<string[]>>()
 
 async function extractPalette(url: string) {
   const image = new Image()
@@ -16,14 +14,14 @@ async function extractPalette(url: string) {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 24
   const context = canvas.getContext('2d', { willReadFrequently: true })
-  if (!context) return defaultPalette
+  if (!context) return fallback
   context.drawImage(image, 0, 0, 24, 24)
   const { data } = context.getImageData(0, 0, 24, 24)
   const buckets = new Map<string, { rgb: number[]; count: number; weight: number }>()
   for (let offset = 0; offset < data.length; offset += 4) {
     const rgb = [data[offset], data[offset + 1], data[offset + 2]]
     const max = Math.max(...rgb)
-    if (data[offset + 3] < 128 || max < 15) continue
+    if (data[offset + 3] < 128 || max < 24) continue
     const chroma = (max - Math.min(...rgb)) / 255
     const key = rgb.map(channel => Math.floor(channel / 48)).join(',')
     const bucket = buckets.get(key) ?? { rgb: [0, 0, 0], count: 0, weight: 0 }
@@ -41,31 +39,23 @@ async function extractPalette(url: string) {
       if (selected.length === 3) break
     }
   }
-  const colors = fallback.map((color, index) => {
-    const rgb = selected[index] ?? selected[0]
-    if (!rgb) return color
-    const [red, green, blue] = rgb
-    const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
-    const shade = Math.round(luminance * 0.5 + 24)
-    return `${shade} ${shade} ${shade}`
-  })
-  const thumbnail = document.createElement('canvas')
-  thumbnail.width = thumbnail.height = 8
-  const small = thumbnail.getContext('2d')
-  if (!small) return { colors }
-  small.drawImage(canvas, 0, 0, 8, 8)
-  return { colors, backdrop: thumbnail.toDataURL() }
+  return fallback.map((color, index) => (selected[index] ?? selected[0])?.map(Math.round).join(' ') ?? color)
 }
 
-export function Ambient({ artwork }: { artwork?: string }) {
-  const [layer, setLayer] = useState({ source: '', palette: defaultPalette })
+const defaultLayer = { source: '', colors: fallback }
+
+export function useAmbient(artwork?: string) {
+  const [layer, setLayer] = useState(defaultLayer)
   useEffect(() => {
-    if (!artwork) return
+    if (!artwork) {
+      setLayer(defaultLayer)
+      return
+    }
     const request = new AbortController()
     void loadArtwork(artwork, true, request.signal).then(async url => {
       if (request.signal.aborted) return
       if (!url) {
-        setLayer({ source: '', palette: defaultPalette })
+        setLayer(defaultLayer)
         return
       }
       let cached = palettes.get(url)
@@ -73,30 +63,32 @@ export function Ambient({ artwork }: { artwork?: string }) {
         if (palettes.size >= 128) palettes.delete(palettes.keys().next().value!)
         cached = extractPalette(url).catch(() => {
           palettes.delete(url)
-          return defaultPalette
+          return fallback
         })
         palettes.set(url, cached)
       }
-      const palette = await cached
-      if (!request.signal.aborted) setLayer({ source: url, palette })
-    })
+      const colors = await cached
+      if (!request.signal.aborted) setLayer({ source: url, colors })
+    }).catch(() => { if (!request.signal.aborted) setLayer(defaultLayer) })
     return () => request.abort()
   }, [artwork])
 
-  const visible = artwork ? layer : { source: '', palette: defaultPalette }
-  return <div className="ambient" aria-hidden="true">
+  return artwork ? layer : defaultLayer
+}
+
+export function Ambient({ layer, cover = false }: { layer: typeof defaultLayer; cover?: boolean }) {
+  return <div className={cover ? 'ambient cover-ambient' : 'ambient'} aria-hidden="true">
     <AnimatePresence initial={false}>
-      <AmbientLayer key={visible.source} palette={visible.palette} />
+      <AmbientLayer key={layer.source} colors={layer.colors} />
     </AnimatePresence>
   </div>
 }
 
-function AmbientLayer({ palette: { colors, backdrop } }: { palette: Palette }) {
+function AmbientLayer({ colors }: { colors: string[] }) {
   const style = {
     '--ambient-a': colors[0],
     '--ambient-b': colors[1],
     '--ambient-c': colors[2],
-    '--ambient-art': backdrop ? 'url(' + backdrop + ')' : 'none',
   } as CSSProperties
   return <motion.div className="ambient-layer" style={style} initial={{ opacity: 0 }}
     animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.6 }} />

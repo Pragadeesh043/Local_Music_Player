@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>MP4A</AssemblyName>
     <Product>MP4A</Product>
+    <ApplicationIcon>Assets\MP4A.ico</ApplicationIcon>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PlatformTarget>x64</PlatformTarget>
@@ -16,7 +17,7 @@
   <ItemGroup>
     <Content Include="..\Glassroom\ui\dist\**\*" Link="Glassroom\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Assets\MP4A.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\MP4A.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.9" />
     <PackageReference Include="SQLitePCLRaw.provider.winsqlite3" Version="2.1.11" />

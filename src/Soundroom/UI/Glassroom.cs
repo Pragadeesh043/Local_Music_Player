@@ -22,10 +22,11 @@ public sealed partial class MainWindow
     private WebStatus? publishedWebStatus;
     private int webCatalogRevision;
 
+    private sealed record WebSignalPath(string Mode, bool Dsp);
     private sealed record WebStatus(string? Key, bool Playing, double Volume, bool VolumeEnabled, string Status,
-        int CatalogRevision, string Output, bool Shuffled, bool Fullscreen);
+        int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath);
     private sealed record WebTrack(string Id, string Title, string Artist, string AlbumId, string Album,
-        string? Artwork, double Duration, int Number);
+        string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate);
 
     private async void InitializeGlassroom()
     {
@@ -305,7 +306,8 @@ public sealed partial class MainWindow
 
     private WebStatus ReadWebStatus() =>
         new(track?.Key, playback?.State == PlaybackState.Playing, outputVolume / 100, volumeEnabled, status,
-            webCatalogRevision, outputDevice?.Name ?? "", shuffleEnabled, AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen);
+            webCatalogRevision, outputDevice?.Name ?? "", shuffleEnabled, AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen,
+            ReadWebSignalPath());
 
     private double WebPosition() => playback?.Position ?? resumePosition;
 
@@ -321,7 +323,7 @@ public sealed partial class MainWindow
             state.Volume,
             queue,
             queueIndex = current is null ? -1 : 0,
-            desktop = new { state.Status, state.VolumeEnabled, state.CatalogRevision, state.Output, state.Shuffled, state.Fullscreen }
+            desktop = new { state.Status, state.VolumeEnabled, state.CatalogRevision, state.Output, state.Shuffled, state.Fullscreen, state.SignalPath }
         };
     }
 

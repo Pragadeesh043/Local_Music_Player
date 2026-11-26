@@ -45,7 +45,7 @@ export function OutputSettings({ player }: { player: Player }) {
   }
 
   return <form className="tool-form" onSubmit={save}>
-    <label>Audio device
+    <label className="tool-card">Audio device
       <select value={data.followDefault ? '' : data.selected ?? ''} disabled={busy || !data.devices.length}
         onChange={event => { const id = event.target.value; apply(() => player.send('selectOutput', { id })) }}>
         <option value="">Follow Windows default</option>
@@ -53,31 +53,46 @@ export function OutputSettings({ player }: { player: Player }) {
       </select>
     </label>
     {!active && <p role="status">No audio device is available.</p>}
-    <fieldset disabled={busy || !active} className="tool-fields">
-      <label>Output mode<select value={draft.route} onChange={event => update('route', Number(event.target.value))}>
-        {routes.map((route, index) => <option key={route} value={index}>{route}</option>)}
-      </select></label>
-      <label>Volume mode<select value={draft.volumeMode} onChange={event => update('volumeMode', Number(event.target.value))}>
-        <option value={0}>Digital volume</option><option value={1}>Fixed line-out</option>
-        {active?.hardwareVolume && <option value={2}>DAC hardware volume</option>}
-      </select></label>
-      <label>Exclusive DSP sample rate<select value={draft.targetRate} onChange={event => update('targetRate', Number(event.target.value))}>
-        {data.rates.map(rate => <option value={rate} key={rate}>{rate ? rate.toLocaleString() + ' Hz' : 'Follow track'}</option>)}
-      </select></label>
-      <label>Exclusive DSP PCM depth<select value={draft.outputBits} onChange={event => update('outputBits', Number(event.target.value))}>
-        {[16, 24, 32].map(bits => <option value={bits} key={bits}>{bits} bit</option>)}
-      </select></label>
-      <label>Resampler phase<select value={Number(draft.minimumPhase)} onChange={event => update('minimumPhase', event.target.value === '1')}>
-        <option value={0}>Linear</option><option value={1}>Minimum</option>
-      </select></label>
-      <label>Native DSD ASIO driver<select value={draft.asioDriver ?? ''} onChange={event => update('asioDriver', event.target.value || null)}>
-        <option value="">Choose a driver</option>{data.drivers.map(driver => <option key={driver}>{driver}</option>)}
-      </select></label>
-      <label className="tool-check"><input type="checkbox" checked={draft.sharper} onChange={event => update('sharper', event.target.checked)} /> Steeper resampling filter</label>
-      <label className="tool-check"><input type="checkbox" checked={draft.dopConfirmed} onChange={event => update('dopConfirmed', event.target.checked)} /> Confirm this DAC supports DoP</label>
-      <label className="tool-check"><input type="checkbox" checked={draft.memory} onChange={event => update('memory', event.target.checked)} /> Decode tracks to RAM</label>
-      <label>Total RAM playback limit (MiB)<input type="number" min={data.minimumMemory} max={data.maximumMemory} step={1} required
-        disabled={!draft.memory} value={draft.memoryLimitMiB} onChange={event => update('memoryLimitMiB', Number(event.target.value))} /></label>
+    <fieldset disabled={busy || !active} className="tool-form">
+      <section className="tool-card">
+        <h3>Routing and volume</h3>
+        <div className="tool-fields">
+          <label>Output mode<select value={draft.route} onChange={event => update('route', Number(event.target.value))}>
+            {routes.map((route, index) => <option key={route} value={index}>{route}</option>)}
+          </select></label>
+          <label>Volume mode<select value={draft.volumeMode} onChange={event => update('volumeMode', Number(event.target.value))}>
+            <option value={0}>Digital volume</option><option value={1}>Fixed line-out</option>
+            {active?.hardwareVolume && <option value={2}>DAC hardware volume</option>}
+          </select></label>
+          <label>Native DSD ASIO driver<select value={draft.asioDriver ?? ''} onChange={event => update('asioDriver', event.target.value || null)}>
+            <option value="">Choose a driver</option>{data.drivers.map(driver => <option key={driver}>{driver}</option>)}
+          </select></label>
+          <label className="tool-check"><input type="checkbox" checked={draft.dopConfirmed} onChange={event => update('dopConfirmed', event.target.checked)} /> Confirm this DAC supports DoP</label>
+        </div>
+      </section>
+      <section className="tool-card">
+        <h3>PCM processing</h3>
+        <div className="tool-fields">
+          <label>Exclusive DSP sample rate<select value={draft.targetRate} onChange={event => update('targetRate', Number(event.target.value))}>
+            {data.rates.map(rate => <option value={rate} key={rate}>{rate ? rate.toLocaleString() + ' Hz' : 'Follow track'}</option>)}
+          </select></label>
+          <label>Exclusive DSP PCM depth<select value={draft.outputBits} onChange={event => update('outputBits', Number(event.target.value))}>
+            {[16, 24, 32].map(bits => <option value={bits} key={bits}>{bits} bit</option>)}
+          </select></label>
+          <label>Resampler phase<select value={Number(draft.minimumPhase)} onChange={event => update('minimumPhase', event.target.value === '1')}>
+            <option value={0}>Linear</option><option value={1}>Minimum</option>
+          </select></label>
+          <label className="tool-check"><input type="checkbox" checked={draft.sharper} onChange={event => update('sharper', event.target.checked)} /> Steeper resampling filter</label>
+        </div>
+      </section>
+      <section className="tool-card">
+        <h3>Memory playback</h3>
+        <div className="tool-fields">
+          <label className="tool-check"><input type="checkbox" checked={draft.memory} onChange={event => update('memory', event.target.checked)} /> Decode tracks to RAM</label>
+          <label>Total RAM playback limit (MiB)<input type="number" min={data.minimumMemory} max={data.maximumMemory} step={1} required
+            disabled={!draft.memory} value={draft.memoryLimitMiB} onChange={event => update('memoryLimitMiB', Number(event.target.value))} /></label>
+        </div>
+      </section>
     </fieldset>
     <div className="tool-actions"><button className="primary-action" type="submit" disabled={!active || busy}>Save for this device</button>
       <button type="button" className="load-more" disabled={busy} onClick={() => apply()}>Refresh</button>

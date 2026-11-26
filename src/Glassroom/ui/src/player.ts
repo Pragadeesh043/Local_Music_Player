@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { Bridge, Command, Commands, Playback, Track } from './bridge'
+import type { LiveSignal } from './desktop'
 
 const initial: Playback = { track: null, playing: false, position: 0, volume: 1, queue: [], queueIndex: -1 }
 
@@ -7,6 +8,10 @@ export class Player {
   private state = initial
   private recent: Track[] = []
   private listeners = new Set<() => void>()
+  private signalListeners = new Set<() => void>()
+  private signal: { sample?: LiveSignal; error?: string } = {}
+  private signalRevision = 0
+  private signalRequests = Promise.resolve()
   private clock = { position: 0, at: performance.now() }
   private operations = Promise.resolve()
   private seekRevision = 0
@@ -20,6 +25,8 @@ export class Player {
         this.update(event.data)
       } else if (event.event === 'progress' && event.data.id === this.state.track?.id) {
         this.clock = { position: event.data.position, at: performance.now() }
+      } else if (event.event === 'signal' && this.signalListeners.size) {
+        this.updateSignal({ sample: event.data })
       }
     })
     this.ready = bridge.request('state', {}).then(state => {
@@ -44,6 +51,38 @@ export class Player {
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  private updateSignal(signal: typeof this.signal) {
+    this.signal = signal
+    this.signalListeners.forEach(listener => listener())
+  }
+
+  private listenSignal(enabled: boolean) {
+    const revision = ++this.signalRevision
+    const previous = this.signal
+    this.signalRequests = this.signalRequests.then(async () => {
+      if (revision !== this.signalRevision) return
+      try {
+        const sample = await this.bridge.request('listenSignal', { enabled })
+        if (enabled && sample && revision === this.signalRevision && this.signal === previous) this.updateSignal({ sample })
+      } catch (failure) {
+        if (enabled && revision === this.signalRevision) this.updateSignal({ error: (failure as Error).message })
+      }
+    })
+  }
+
+  signalSnapshot = () => this.signal
+  subscribeSignal = (listener: () => void) => {
+    this.signalListeners.add(listener)
+    if (this.signalListeners.size === 1) this.listenSignal(true)
+    return () => {
+      this.signalListeners.delete(listener)
+      if (!this.signalListeners.size) {
+        this.signal = {}
+        this.listenSignal(false)
+      }
+    }
   }
 
   time = () => Math.max(0, Math.min(this.state.track?.duration ?? 0,
@@ -79,6 +118,13 @@ export class Player {
 }
 
 export const usePlayer = (player: Player) => useSyncExternalStore(player.subscribe, player.snapshot)
+const unsubscribeSignal = () => () => {}
+
+export function useSignal(player: Player, enabled = true) {
+  const { track } = usePlayer(player)
+  const { sample, error } = useSyncExternalStore(enabled ? player.subscribeSignal : unsubscribeSignal, player.signalSnapshot)
+  return { sample: enabled && track && (!sample?.trackId || sample.trackId === track.id) ? sample : undefined, error }
+}
 
 export function useResource<T>(load: () => Promise<T>) {
   const [resource, setResource] = useState<{ data?: T; error?: string }>({})

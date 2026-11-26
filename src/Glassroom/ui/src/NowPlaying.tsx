@@ -1,10 +1,12 @@
-import { ChevronDown, ChevronUp, Info, ListMusic, MicVocal, Pause, Play, Shuffle, SkipBack, SkipForward, Volume2, VolumeX, X } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, Headphones, ListMusic, Maximize2, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { Ambient } from './Ambient'
+import { Ambient, useAmbient } from './Ambient'
 import { Artwork } from './Artwork'
-import type { Lyric } from './bridge'
+import type { Lyric, Track } from './bridge'
+import { LyricsSpectrum, SignalChain, Telemetry, trackFormat, trackRate } from './LiveTelemetry'
+import type { OpenAudioTool } from './LiveTelemetry'
 import { Player, timeLabel, usePlayer, useResource } from './player'
 
 export const spring = { type: 'spring', stiffness: 350, damping: 32, mass: 0.85 } as const
@@ -23,15 +25,18 @@ export function IconButton({ label, children, action, active, disabled = false }
   </motion.button>
 }
 
-export function Dock({ player, notify, expand, active, queueVisible, toggleQueue }: {
+export function Dock({ player, notify, expand, active, queueVisible, toggleQueue, openTool }: {
   player: Player
   notify: Notify
   expand: () => void
   active: boolean
   queueVisible?: boolean
   toggleQueue: () => void
+  openTool: OpenAudioTool
 }) {
   const state = usePlayer(player)
+  const format = trackFormat(state.track)
+  const hiRes = (state.track?.rate ?? 0) > 48000 || (state.track?.bits ?? 0) > 16
   return <section className="dock glass" aria-label="Playback controls">
     <div className="dock-transport">
       {state.desktop && <IconButton label="Shuffle" active={state.desktop.shuffled}
@@ -40,11 +45,18 @@ export function Dock({ player, notify, expand, active, queueVisible, toggleQueue
     </div>
     <button className="dock-track" onClick={() => expand()} disabled={!state.track} aria-label="Expand Now Playing">
       <motion.span className="dock-art" layoutId="player-cover" transition={spring}><Artwork src={state.track?.artwork} loading="eager" /></motion.span>
-      <span className="min-w-0"><strong>{state.track?.title ?? 'Nothing playing'}</strong><small>{state.track?.artist ?? 'Choose a song to begin'}</small></span>
+      <span className="min-w-0"><span className="dock-title"><strong>{state.track?.title ?? 'Nothing playing'}</strong>
+        {format && <span className="format-badge" title={[format, state.track?.bits ? state.track.bits + '-bit' : '', trackRate(state.track)].filter(Boolean).join(' · ')}>
+          {hiRes ? 'HI-RES · ' : ''}{format}</span>}</span><small>{state.track?.artist ?? 'Choose a song to begin'}</small></span>
     </button>
     <Scrubber key={state.track?.id} player={player} notify={notify} active={active} />
     <div className="dock-actions">
       <Volume player={player} notify={notify} />
+      {state.desktop && <div className="dock-tools" role="group" aria-label="Audio tools">
+        <IconButton label="DSP" action={() => openTool('DSP')}><SlidersHorizontal size={17} /></IconButton>
+        <IconButton label="Output device" action={() => openTool('Output settings')}><Headphones size={18} /></IconButton>
+        <IconButton label="Signal inspector" action={() => openTool('Signal inspector')}><Activity size={18} /></IconButton>
+      </div>}
       <IconButton label={queueVisible ? 'Hide queue' : 'Open queue'} active={queueVisible}
         disabled={queueVisible === undefined && !state.track && !state.queue.length} action={toggleQueue}><ListMusic size={19} /></IconButton>
       <IconButton label="Expand player" disabled={!state.track} action={() => expand()}><ChevronUp size={20} /></IconButton>
@@ -188,13 +200,15 @@ function Volume({ player, notify }: { player: Player; notify: Notify }) {
   </div>
 }
 
-export function NowPlaying({ player, notify, close, queueOpen, setQueueOpen, inspect }: {
+export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueueOpen, inspect, openTool }: {
   player: Player
+  ambient: ReturnType<typeof useAmbient>
   notify: Notify
   close: () => void
   queueOpen: boolean
   setQueueOpen: (open: boolean) => void
   inspect?: () => void
+  openTool: OpenAudioTool
 }) {
   const { track } = usePlayer(player)
   const panel = useRef<HTMLElement>(null)
@@ -220,31 +234,32 @@ export function NowPlaying({ player, notify, close, queueOpen, setQueueOpen, ins
         else close()
       }
       if (event.key !== 'Tab') return
-      const nodes = [...(panel.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])') ?? [])]
-        .filter(node => !node.closest('[inert]') && node.getClientRects().length > 0)
+      const nodes = [...(panel.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex="0"]') ?? [])]
+        .filter(node => node.tabIndex >= 0 && !node.closest('[inert]') && node.getClientRects().length > 0)
       const first = nodes[0]
       const last = nodes.at(-1)
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }}>
-    <Ambient artwork={track?.artwork} />
+    <Ambient layer={ambient} />
     <header className="full-header">
-      <IconButton label="Collapse Now Playing" action={close}><ChevronDown size={23} /></IconButton>
+      <div className="full-brand"><IconButton label="Collapse Now Playing" action={close}><ChevronDown size={23} /></IconButton><strong>MP4A</strong></div>
       <span>Now Playing</span>
       <div className="tool-actions" ref={queueToggle}>
         <IconButton label="Toggle queue" active={queueOpen} action={() => queueOpen ? closeQueue() : setQueueOpen(true)}><ListMusic size={22} /></IconButton>
-        {inspect && <IconButton label="Track details" action={inspect}><Info size={20} /></IconButton>}
+        {inspect && <IconButton label="Signal inspector" action={() => openTool('Signal inspector')}><Activity size={20} /></IconButton>}
       </div>
     </header>
     <div className="full-content">
       <div className="full-transport">
-        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Artwork src={track?.artwork} loading="eager" /></motion.div>
+        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Ambient layer={ambient} cover /><Artwork src={track?.artwork} loading="eager" /></motion.div>
         <div className="full-title"><h1>{track?.title ?? 'Nothing playing'}</h1><p>{track?.artist}</p></div>
         <Scrubber key={track?.id} player={player} notify={notify} />
         <Transport player={player} notify={notify} />
         <Volume player={player} notify={notify} />
+        <SignalChain player={player} openTool={openTool} />
       </div>
-      <Lyrics key={track?.id} player={player} id={track?.id} notify={notify} />
+      <PlayerTabs key={track?.id} player={player} track={track} notify={notify} inspect={inspect} />
     </div>
     <AnimatePresence>
       {queueOpen && <Queue player={player} notify={notify} close={closeQueue} panel={queuePanel} />}
@@ -252,9 +267,56 @@ export function NowPlaying({ player, notify, close, queueOpen, setQueueOpen, ins
   </motion.section>
 }
 
-function Lyrics({ player, id, notify }: { player: Player; id?: string; notify: Notify }) {
+const playerTabs = ['Lyrics', 'Live Signal', 'Track Info'] as const
+
+function PlayerTabs({ player, track, notify, inspect }: { player: Player; track: Track | null; notify: Notify; inspect?: () => void }) {
+  const id = track?.id
   const load = useCallback(() => id ? player.bridge.request('lyrics', { id }) : Promise.resolve([]), [id, player])
   const { data, error } = useResource(load)
+  const [selection, setSelection] = useState<number>()
+  const current = selection ?? (error || data?.length === 0 ? 1 : 0)
+  const tabs = useRef<HTMLDivElement>(null)
+  return <section className="player-tabs glass">
+    <div className="player-tab-list" role="tablist" aria-label="Now Playing views" ref={tabs} onKeyDown={event => {
+      const length = playerTabs.length
+      const index = { ArrowLeft: (current - 1 + length) % length, ArrowRight: (current + 1) % length, Home: 0, End: length - 1 }[event.key]
+      if (index === undefined) return
+      event.preventDefault()
+      setSelection(index)
+      tabs.current?.querySelectorAll('button')[index]?.focus()
+    }}>
+      {playerTabs.map((label, index) => <button key={label} id={`player-tab-${index}`} type="button" role="tab"
+        aria-selected={current === index} aria-controls="player-tab-panel" tabIndex={current === index ? 0 : -1}
+        onClick={() => setSelection(index)}>{label}</button>)}
+    </div>
+    <div className="player-tab-panel" id="player-tab-panel" role="tabpanel" aria-labelledby={`player-tab-${current}`} tabIndex={0}>
+      {current === 0 && <>
+        <Lyrics player={player} id={id} notify={notify} data={data} error={error} />
+        <LyricsSpectrum player={player} />
+      </>}
+      {current === 1 && <Telemetry player={player} />}
+      {current === 2 && <TrackInfo track={track} inspect={inspect} />}
+    </div>
+  </section>
+}
+
+function TrackInfo({ track, inspect }: { track: Track | null; inspect?: () => void }) {
+  if (!track) return <p className="lyrics-empty">No track selected.</p>
+  const rows = [
+    ['Title', track.title], ['Artist', track.artist], ['Album', track.album], ['Duration', timeLabel(track.duration)],
+    ['Format', trackFormat(track)], ['Sample rate', trackRate(track)], ['Bit depth', track.bits ? track.bits + ' bit' : ''],
+    ['Channels', track.channels || ''], ['Bitrate', track.bitRate ? Math.round(track.bitRate / 1000) + ' kbps' : ''],
+  ] as const
+  return <div className="player-track-info">
+    <dl className="tool-details">{rows.filter(([, value]) => value !== '').map(([label, value]) =>
+      <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+    {inspect && <button className="load-more" onClick={inspect}>Open file details</button>}
+  </div>
+}
+
+function Lyrics({ player, id, notify, data, error }: {
+  player: Player; id?: string; notify: Notify; data?: Lyric[]; error?: string
+}) {
   const [active, setActive] = useState(-1)
   const scroller = useRef<HTMLDivElement>(null)
   const activeLine = useRef<HTMLButtonElement>(null)
@@ -292,7 +354,6 @@ function Lyrics({ player, id, notify }: { player: Player; id?: string; notify: N
   }
 
   return <section className="lyrics" aria-label="Synced lyrics">
-    <h2><MicVocal size={18} /> Lyrics</h2>
     <div ref={scroller} className="lyrics-scroll">
       {error || !data?.length ? <p className="lyrics-empty">{error ?? (data ? 'Synced lyrics are unavailable for this track.' : 'Loading lyrics…')}</p>
         : data.map((line, index) => <button key={index} ref={index === active ? activeLine : undefined}
@@ -301,14 +362,17 @@ function Lyrics({ player, id, notify }: { player: Player; id?: string; notify: N
   </section>
 }
 
-export function QueueRail({ player, notify, expand }: { player: Player; notify: Notify; expand: () => void }) {
-  const { track } = usePlayer(player)
+export function QueueRail({ player, notify, openTool }: { player: Player; notify: Notify; openTool: OpenAudioTool }) {
+  const { desktop } = usePlayer(player)
   const panel = useRef<HTMLElement>(null)
-  return <aside className="queue-rail" ref={panel} tabIndex={-1} aria-label="Playback queue">
-    <h2>Now Playing</h2>
-    {track ? <button className="queue-current" onClick={expand} aria-label="Expand current track">
-      <Artwork src={track.artwork} loading="eager" /><span><strong>{track.title}</strong><small>{track.artist}</small></span>
-    </button> : <p className="lyrics-empty">Nothing playing</p>}
+  return <aside className="queue-rail" ref={panel} tabIndex={-1} aria-label="Live telemetry and queue">
+    <section className="rail-signal">
+      <header><h2>Live Signal &amp; Path</h2>
+        {desktop && <IconButton label="Expand Signal Inspector" action={() => openTool('Signal inspector')}><Maximize2 size={15} /></IconButton>}
+      </header>
+      <Telemetry player={player} compact />
+      <SignalChain player={player} openTool={openTool} />
+    </section>
     <h2>Up Next</h2>
     <div className="queue-scroll">
       <QueueTracks player={player} notify={notify} panel={panel} />
@@ -349,6 +413,7 @@ function QueueTracks({ player, notify, panel }: { player: Player; notify: Notify
     const index = queueIndex + offset + 1
     return <div className="queue-row" key={track.id + ':' + index}>
       <button className="track-link" aria-label={'Play ' + track.title + ' from queue'} onClick={() => updateQueue('jump', index, track.id)}>
+        <Artwork src={track.artwork} />
         <span><strong title={track.title}>{track.title}</strong><small>{track.artist}</small></span>
       </button>
       <time>{timeLabel(track.duration)}</time>

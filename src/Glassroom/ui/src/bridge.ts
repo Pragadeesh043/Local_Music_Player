@@ -11,6 +11,11 @@ export type Track = {
   artwork?: string
   duration: number
   number: number
+  codec?: string
+  rate?: number
+  bits?: number
+  channels?: number
+  bitRate?: number
 }
 
 export type Album = {
@@ -34,7 +39,9 @@ export type Playback = {
   volume: number
   queue: Track[]
   queueIndex: number
-  desktop?: { status: string; volumeEnabled: boolean; catalogRevision: number; output: string; shuffled: boolean; fullscreen?: boolean }
+  liveSignal?: boolean
+  desktop?: { status: string; volumeEnabled: boolean; catalogRevision: number; output: string; shuffled: boolean; fullscreen?: boolean
+    signalPath?: { mode: string; dsp: boolean } | null }
 }
 
 export type LibraryQuery = {

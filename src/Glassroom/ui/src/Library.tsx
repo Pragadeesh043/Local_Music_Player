@@ -1,6 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowLeft, ArrowRight, Info, ListMusic, Play, Plus } from 'lucide-react'
-import { motion } from 'motion/react'
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Info, ListMusic, Pause, Play, Plus } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Artwork } from './Artwork'
@@ -123,21 +123,7 @@ function Discover({ bridge, folder, albums, recent, open, play, enqueue, inspect
   const tracks = recent.length ? recent : data?.items.filter(item => 'albumId' in item)
 
   return <>
-    <section className="featured-albums" aria-label="Featured albums">
-      {albums.slice(0, 2).map(album => <article className="hero" key={album.id}>
-        <Artwork src={album.artwork} className="hero-image" loading="eager" />
-        <div className="hero-copy">
-          <h2 title={album.title}>{album.title}</h2>
-          <p>{album.artist}</p>
-          <div className="hero-actions">
-            <button className="primary-action" aria-label={'Play album ' + album.title}
-              onClick={() => play(album.firstTrackId, album.id)}><Play size={14} fill="currentColor" /> Play album</button>
-            <button className="hero-link" aria-label={'View album ' + album.title}
-              onClick={() => open({ kind: 'album', item: album })}>View album <ArrowRight size={14} /></button>
-          </div>
-        </div>
-      </article>)}
-    </section>
+    <FeaturedCarousel albums={albums} track={tracks?.[0]} recent={recent.length > 0} open={open} play={play} />
     <div className="discover-sections">
       <section className="discover-tracks">
         <h2>{recent.length ? 'Recently Played' : 'Library Tracks'}</h2>
@@ -153,6 +139,73 @@ function Discover({ bridge, folder, albums, recent, open, play, enqueue, inspect
       </section>
     </div>
   </>
+}
+
+function FeaturedCarousel({ albums, track, recent, open, play }: {
+  albums: Album[]; track?: Track; recent: boolean
+  open: (detail: Detail) => void; play: (id: string, albumId?: string) => void
+}) {
+  const slides: { item: Album | Track; label: string; album?: Album }[] = albums.slice(0, 4).map((album, index) => ({
+    item: album, label: index === 0 ? 'Featured album' : 'Library highlight', album,
+  }))
+  if (track) slides.splice(1, 0, { item: track, label: recent ? 'Recently played' : 'Featured track',
+    album: albums.find(album => album.id === track.albumId) })
+  const [index, setIndex] = useState(0)
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [rotation, setRotation] = useState<boolean>()
+  const reducedMotion = useReducedMotion()
+  const rotating = rotation ?? !reducedMotion
+  const count = slides.length
+  const current = index % count
+  const { item, label, album } = slides[current]
+  const isTrack = 'albumId' in item
+
+  useEffect(() => {
+    if (!rotating || hovered || focused || count < 2) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setIndex((current + 1) % count)
+    }, 6500)
+    return () => window.clearInterval(timer)
+  }, [rotating, hovered, focused, count, current])
+
+  return <section className="featured-albums" aria-label="Discover highlights" aria-roledescription="carousel"
+    onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}
+    onFocus={() => setFocused(true)} onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
+    }}>
+    <div className="hero-slides" aria-live={rotating && !focused && !hovered ? 'off' : 'polite'}>
+      <AnimatePresence initial={false} mode="wait">
+        <motion.article className="hero" key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .23 }}
+          aria-label={`${current + 1} of ${count}`} aria-roledescription="slide">
+          <Artwork src={item.artwork} className="hero-image" loading="eager" />
+          <div className="hero-copy">
+            <span className="hero-label">{label}</span>
+            <h2 title={item.title}>{item.title}</h2>
+            <p>{item.artist}</p>
+            <div className="hero-actions">
+              <button className="primary-action" aria-label={`Play ${isTrack ? '' : 'album '}${item.title}`}
+                onClick={() => isTrack ? play(item.id, item.albumId) : play(item.firstTrackId, item.id)}>
+                <Play size={14} fill="currentColor" />{isTrack ? 'Play track' : 'Play album'}
+              </button>
+              {album && <button className="hero-link" aria-label={'View album ' + album.title}
+                onClick={() => open({ kind: 'album', item: album })}>View album <ArrowRight size={14} /></button>}
+            </div>
+          </div>
+        </motion.article>
+      </AnimatePresence>
+    </div>
+    {count > 1 && <div className="carousel-controls">
+      <button className="icon-button" aria-label={rotating ? 'Pause carousel' : 'Resume carousel'} onClick={() => setRotation(!rotating)}>
+        {rotating ? <Pause size={14} /> : <Play size={14} />}
+      </button>
+      <button className="icon-button" aria-label="Previous highlight" onClick={() => setIndex((current - 1 + count) % count)}><ChevronLeft size={17} /></button>
+      {slides.map((slide, position) => <button key={slide.item.id} className="carousel-dot" aria-label={'Show ' + slide.item.title}
+        aria-current={current === position ? 'true' : undefined} onClick={() => setIndex(position)} />)}
+      <button className="icon-button" aria-label="Next highlight" onClick={() => setIndex((current + 1) % count)}><ChevronRight size={17} /></button>
+    </div>}
+  </section>
 }
 
 function pageOffset(index: number) {

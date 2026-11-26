@@ -36,6 +36,7 @@ export type DspView = { settings: Dsp; impulse: string | null; presets: string[]
 export type DspAction = 'apply' | 'reset' | 'load' | 'save' | 'autoeq' | 'impulse' | 'clearImpulse'
 export type Meter = { peak: number; rms: number; clips: number }
 export type LiveSignal = {
+  trackId?: string
   source: Meter[]; output: Meter[]; waveform: number[]; waveChannel: number; truePeak: number | null
   lufs: number | null; correlation: number | null; phase: { side: number; mid: number }[] | null
   limiterReductionDb: number | null; spectrum: number[]; sourceChannels: string[]; outputChannels: string[]

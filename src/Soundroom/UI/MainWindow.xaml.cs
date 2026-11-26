@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     {
         thumbnails = new(Path.Combine(Diagnostics.DataDirectory, "ArtworkThumbnails"), lifetime: libraryLifetime.Token);
         InitializeComponent();
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MP4A.ico"));
         ApplyGlassroomTheme(dark: true);
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         double scale = WindowPresentation.DpiScale(WindowNative.GetWindowHandle(this));
@@ -307,7 +308,7 @@ public sealed partial class MainWindow : Window
                 }
                 else _ = MoveAsync(1);
             });
-            session.SetAnalysisEnabled(presentationVisible);
+            session.SetAnalysisEnabled(presentationVisible && liveSignal);
             session.Open(device, WindowNative.GetWindowHandle(this));
             session.Update(dsp, DigitalVolume());
             session.Inspect(channel);

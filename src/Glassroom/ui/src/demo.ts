@@ -1,5 +1,6 @@
 import catalog from '../../demo/catalog.json'
 import type { Bridge, Command, Commands, LibraryQuery, Playback, PlayerEvent, Request, Track } from './bridge'
+import type { LiveSignal } from './desktop'
 
 const tracks = catalog.albums.flatMap(album => album.tracks)
 const byId = new Map(tracks.map(track => [track.id, track]))
@@ -20,6 +21,9 @@ function library(args: LibraryQuery) {
 class DemoAudio {
   private context?: AudioContext
   private master?: GainNode
+  private analyser?: AnalyserNode
+  private waveform = new Float32Array(512)
+  private spectrum = new Float32Array(256)
   private voices: OscillatorNode[] = []
   private level = 0.7
 
@@ -33,8 +37,12 @@ class DemoAudio {
     await this.context.resume()
     this.stop()
     const context = this.context
-    this.master ??= context.createGain()
-    this.master.connect(context.destination)
+    if (!this.master) {
+      this.master = context.createGain()
+      this.analyser = context.createAnalyser()
+      this.analyser.fftSize = this.waveform.length
+      this.master.connect(this.analyser).connect(context.destination)
+    }
     this.setVolume(this.level)
     const root = 55 * 2 ** ((tracks.findIndex(item => item.id === track.id) % 12) / 12)
     this.voices = [1, 2, 2.998, 4.001].map((ratio, index) => {
@@ -56,6 +64,22 @@ class DemoAudio {
     this.voices.forEach(voice => voice.stop())
     this.voices = []
   }
+
+  signal(trackId: string): LiveSignal | null {
+    if (!this.analyser) return null
+    this.analyser.getFloatTimeDomainData(this.waveform)
+    this.analyser.getFloatFrequencyData(this.spectrum)
+    const waveform = Array.from(this.waveform)
+    const peak = Math.max(...waveform.map(Math.abs))
+    const rms = Math.sqrt(waveform.reduce((sum, value) => sum + value * value, 0) / waveform.length)
+    const meter = { peak, rms, clips: 0 }
+    const channels = ['L', 'R']
+    return { trackId, waveform, waveChannel: 0, source: [meter, meter], output: [meter, meter],
+      sourceChannels: channels, outputChannels: channels, truePeak: null, lufs: null, limiterReductionDb: null,
+      correlation: rms > 0 ? 1 : null, phase: waveform.map(mid => ({ mid, side: 0 })),
+      spectrum: Array.from({ length: 96 }, (_, index) => Math.max(-90, this.spectrum[Math.floor(255 ** (index / 95))])),
+    }
+  }
 }
 
 export class DemoBridge implements Bridge {
@@ -67,6 +91,7 @@ export class DemoBridge implements Bridge {
   private started = 0
   private playing = false
   private volume = 0.7
+  private listening = false
 
   constructor() {
     window.setInterval(() => {
@@ -77,6 +102,10 @@ export class DemoBridge implements Bridge {
         return
       }
       this.emit({ v: 1, event: 'progress', data: { id: this.queue[this.index].id, position: this.time() } })
+      if (this.listening && !document.hidden) {
+        const data = this.audio.signal(this.queue[this.index].id)
+        if (data) this.emit({ v: 1, event: 'signal', data })
+      }
     }, 125)
   }
 
@@ -85,7 +114,8 @@ export class DemoBridge implements Bridge {
   }
 
   private state(): Playback {
-    return { track: this.queue[this.index], queue: [...this.queue], queueIndex: this.index, position: this.time(), playing: this.playing, volume: this.volume }
+    return { track: this.queue[this.index], queue: [...this.queue], queueIndex: this.index, position: this.time(),
+      playing: this.playing, volume: this.volume, liveSignal: true }
   }
 
   private emit(event: PlayerEvent) {
@@ -127,6 +157,9 @@ export class DemoBridge implements Bridge {
       case 'state': return this.state()
       case 'library': return library(args)
       case 'lyrics': return args.id === 'violet-1' ? catalog.lyrics : []
+      case 'listenSignal':
+        this.listening = args.enabled
+        return args.enabled && this.playing ? this.audio.signal(this.queue[this.index].id) : null
       case 'play': {
         if (!args.id) {
           if (!this.playing) await this.change(this.index, this.time() >= this.queue[this.index].duration ? 0 : this.time())

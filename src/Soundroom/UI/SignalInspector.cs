@@ -9,6 +9,24 @@ public sealed partial class MainWindow
     private Signal? lastSignal;
     private readonly Complex[] fft = new Complex[512];
 
+    private WebSignalPath? ReadWebSignalPath()
+    {
+        if (playback is not { } session || session.CurrentTrack.Key != track?.Key)
+            return null;
+        string mode = session.OutputRoute switch
+        {
+            Route.Binaural => "Shared binaural",
+            Route.Downmix => "Shared stereo",
+            Route.Cable => "Shared 7.1",
+            Route.Exclusive => "Exclusive PCM",
+            Route.ExclusiveDsp => "Exclusive PCM (DSP route)",
+            Route.Dop => "Exclusive DoP",
+            Route.NativeDsd => "ASIO DSD",
+            _ => "Unknown route"
+        };
+        return new(mode, session.IsProcessed && session.ReadProcessing(out _, out _).Controls.Dsp.Enabled);
+    }
+
     private object? ListenSignal(bool enabled)
     {
         liveSignal = enabled;
@@ -42,7 +60,7 @@ public sealed partial class MainWindow
                 return 20 * Math.Log10(Math.Max(1e-9, Math.Sqrt(fft[bin].X * fft[bin].X + fft[bin].Y * fft[bin].Y)));
             }).ToArray();
         }
-        return new { source = signal.Source, output = signal.Output, signal.Waveform, signal.WaveChannel,
+        return new { trackId = session.CurrentTrack.Key, source = signal.Source, output = signal.Output, signal.Waveform, signal.WaveChannel,
             signal.TruePeak, signal.Lufs, signal.Correlation, signal.Phase, signal.LimiterReductionDb, spectrum,
             sourceChannels = session.SourceChannels, outputChannels = session.OutputChannels };
     }
