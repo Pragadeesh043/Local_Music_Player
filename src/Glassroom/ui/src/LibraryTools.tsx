@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { LibrarySettings, SmartFilter } from './desktop'
 import { Player, useResource } from './player'
 
@@ -6,17 +6,20 @@ const sortFields = ['Album order', 'Title', 'Artist', 'Album artist', 'Album', '
   'Date added', 'Filename', 'Duration', 'Codec', 'Sample rate', 'Bit depth', 'Rating', 'Play count']
 const blank: SmartFilter = { codec: '', genre: '', year: '', minimumRate: 0, minimumBits: 0, minimumDr: 0, rating: 0, plays: 0 }
 
-export function LibraryTools({ player, folder, setFolder }: { player: Player; folder: string; setFolder: (folder: string) => void }) {
+export function LibraryTools({ player, folder, setFolder, onFilterChange }: {
+  player: Player; folder: string; setFolder: (folder: string) => void; onFilterChange: () => void
+}) {
   const load = useCallback(() => player.bridge.request('librarySettings', {}), [player])
   const { data, error } = useResource(load)
   if (!data) return <p role="status">{error ?? 'Reading the library…'}</p>
-  return <LibraryForm initial={data} player={player} folder={folder} setFolder={setFolder} />
+  return <LibraryForm initial={data} player={player} folder={folder} setFolder={setFolder} onFilterChange={onFilterChange} />
 }
 
-function LibraryForm({ initial, player, folder, setFolder }: {
-  initial: LibrarySettings; player: Player; folder: string; setFolder: (folder: string) => void
+function LibraryForm({ initial, player, folder, setFolder, onFilterChange }: {
+  initial: LibrarySettings; player: Player; folder: string; setFolder: (folder: string) => void; onFilterChange: () => void
 }) {
   const [filter, setFilter] = useState(initial.filter)
+  const appliedFilter = useRef(initial.filter)
   const [sort, setSort] = useState(initial.sort)
   const [descending, setDescending] = useState(initial.descending)
   const [name, setName] = useState('')
@@ -33,6 +36,9 @@ function LibraryForm({ initial, player, folder, setFolder }: {
     setBusy(true)
     setMessage('')
     void player.send('saveLibrary', { filter: value, sort, descending, name: title }).then(() => {
+      const keys = Object.keys(value) as (keyof SmartFilter)[]
+      if (keys.some(key => appliedFilter.current[key] !== value[key])) onFilterChange()
+      appliedFilter.current = value
       setFilter(value)
       if (title) setSaved(current => ({ ...current, [title]: value }))
       setMessage('Library preferences updated.')

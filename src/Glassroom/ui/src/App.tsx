@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react'
 import { Ambient, useAmbient } from './Ambient'
 import type { DesktopAction } from './bridge'
 import { CatalogView } from './Library'
-import type { Detail, Route } from './Library'
+import type { BrowsePosition, Detail, Route } from './Library'
 import { LibraryTools } from './LibraryTools'
 import { DspTools } from './DspTools'
 import { FileTools } from './FileTools'
@@ -31,6 +31,7 @@ export function App({ player }: { player: Player }) {
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [folder, setFolder] = useState('')
+  const [browseFilterRevision, setBrowseFilterRevision] = useState(0)
   const [tool, setTool] = useState<Tool | null>(null)
   const [fileId, setFileId] = useState('')
   const [expanded, setExpanded] = useState(false)
@@ -39,11 +40,13 @@ export function App({ player }: { player: Player }) {
   const [wide, setWide] = useState(() => matchMedia(queueRailMedia).matches)
   const [error, setError] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
+  const browsePosition = useRef<BrowsePosition | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const restoreFocus = useRef(false)
   const { track, desktop } = usePlayer(player)
   const ambient = useAmbient(track?.artwork)
   const catalogRevision = desktop?.catalogRevision
+  const browseScope = route === 'Browse' ? JSON.stringify([query, folder, browseFilterRevision]) : ''
   const loadPlaylists = useCallback(() => player.bridge.request('library', { kind: 'playlists', offset: 0, limit: 5 }),
     [player, catalogRevision])
   const { data: playlists } = useResource(loadPlaylists)
@@ -158,10 +161,11 @@ export function App({ player }: { player: Player }) {
               </div>
             </header>
             <AnimatePresence initial={false} mode="wait">
-              <motion.div className="route-frame" key={JSON.stringify([route, query, folder, detail?.item.id ?? '', desktop?.catalogRevision ?? 0])}
+              <motion.div className="route-frame" key={JSON.stringify([route, query, folder, detail?.item.id ?? '', catalogRevision ?? 0, browseScope])}
                 initial={{ opacity: 0, y: 9 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.17 }}>
                 <CatalogView bridge={player.bridge} revision={catalogRevision ?? 0} route={route} query={query} folder={folder} detail={detail} open={setDetail} back={() => setDetail(null)}
+                  browsePosition={route === 'Browse' && !detail ? browsePosition : undefined} browseScope={browseScope}
                   recent={player.recentTracks()}
                   play={(id, albumId, playlistId) => notify(player.send('play', { id, ...(albumId && { albumId }), ...(playlistId && { playlistId }),
                     ...(query && { query }), ...(folder && { folder }) }))}
@@ -182,7 +186,8 @@ export function App({ player }: { player: Player }) {
         </AnimatePresence>
         {tool && <ToolDialog key={tool} title={tool} close={() => setTool(null)}>
           {tool === 'Output settings' && <OutputSettings player={player} />}
-          {tool === 'Library tools' && <LibraryTools player={player} folder={folder} setFolder={value => { setFolder(value); if (value) navigate('Library') }} />}
+          {tool === 'Library tools' && <LibraryTools player={player} folder={folder} setFolder={value => { setFolder(value); if (value) navigate('Library') }}
+            onFilterChange={() => setBrowseFilterRevision(revision => revision + 1)} />}
           {tool === 'DSP' && <DspTools player={player} />}
           {tool === 'Signal inspector' && <SignalTools player={player} />}
           {tool === 'Track details' && <FileTools player={player} id={fileId} />}

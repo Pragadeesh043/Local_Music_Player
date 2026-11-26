@@ -9,12 +9,13 @@ import { timeLabel, useResource } from './player'
 
 export type Route = 'Discover' | 'Browse' | 'Library' | 'Playlists'
 export type Detail = { kind: 'album'; item: Album } | { kind: 'playlist'; item: Playlist }
+export type BrowsePosition = { scope: string; top: number }
 type Item = Album | Playlist | Track
 const pageSize = 60
 const discoverySize = 6
 const recentPages = new WeakMap<Bridge, Map<string, Page>>()
 
-export function CatalogView({ bridge, revision, route, query, folder, detail, open, back, play, enqueue, inspect, recent }: {
+export function CatalogView({ bridge, revision, route, query, folder, detail, open, back, play, enqueue, inspect, recent, browsePosition, browseScope }: {
   bridge: Bridge
   revision: number
   route: Route
@@ -27,8 +28,26 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
   enqueue: (id: string) => void
   inspect?: (id: string) => void
   recent: Track[]
+  browsePosition?: RefObject<BrowsePosition | null>
+  browseScope: string
 }) {
-  const scroll = useRef<HTMLDivElement>(null)
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
+  const [initialTop] = useState(() => browsePosition?.current?.scope === browseScope ? browsePosition.current.top : 0)
+  const [restoring, setRestoring] = useState(initialTop > 0)
+  const restorePending = useRef(restoring)
+  const finishRestore = useCallback(() => {
+    restorePending.current = false
+    setRestoring(false)
+  }, [])
+  const savePosition = useCallback((element: HTMLDivElement) => {
+    if (browsePosition && !restorePending.current)
+      browsePosition.current = { scope: browseScope, top: element.scrollTop }
+  }, [browsePosition, browseScope])
+  useLayoutEffect(() => {
+    if (!scrollElement) return
+    savePosition(scrollElement)
+    return () => savePosition(scrollElement)
+  }, [scrollElement, savePosition])
   const requested = useRef(new Set<number>())
   const active = useRef(false)
   const kind = detail || route === 'Library' ? 'tracks' : route === 'Playlists' ? 'playlists' : 'albums'
@@ -46,6 +65,7 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
   const firstPage = pageCache.get(keyFor(0))
   const [pages, setPages] = useState(() => new Map<number, Item[]>(firstPage ? [[0, firstPage.items]] : []))
   const [total, setTotal] = useState<number | null>(() => firstPage?.total ?? null)
+  const [firstPageSettled, setFirstPageSettled] = useState(false)
   const [errors, setErrors] = useState(new Map<number, string>())
   const first = pages.get(0)?.[0]
   const albums = discover ? (pages.get(0) ?? []).filter(item => 'firstTrackId' in item) : []
@@ -69,9 +89,11 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
       if (!active.current) return
       setPages(previous => new Map(previous).set(offset, result.items))
       setTotal(result.total)
+      if (offset === 0) setFirstPageSettled(true)
     }, (error: Error) => {
       if (!active.current) return
       setErrors(previous => new Map(previous).set(offset, error.message))
+      if (offset === 0) setFirstPageSettled(true)
     })
   }, [bridge, argsFor, keyFor, pageCache])
 
@@ -80,6 +102,11 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
     load(0)
     return () => { active.current = false }
   }, [load])
+
+  useLayoutEffect(() => {
+    if (restoring && firstPageSettled && total === 0)
+      finishRestore()
+  }, [restoring, firstPageSettled, total, finishRestore])
 
   function retry(offset: number) {
     setErrors(previous => {
@@ -91,8 +118,9 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
     load(offset)
   }
 
-  return <div className="catalog-scroll" ref={scroll} tabIndex={0} aria-label={detail?.item.title ?? route}>
-    <div className="catalog-content">
+  return <div className="catalog-scroll" ref={setScrollElement} onScroll={browsePosition ? event => savePosition(event.currentTarget) : undefined}
+    tabIndex={0} aria-label={detail?.item.title ?? route}>
+    <div className="catalog-content" style={restoring && !failure ? { visibility: 'hidden' } : undefined}>
       {detail ? <header className="detail-header">
         <button className="back-link" onClick={back}><ArrowLeft size={16} /> Back to {route}</button>
         <div className="detail-identity">
@@ -119,7 +147,8 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
       {albums.length > 0 && <Discover bridge={bridge} folder={folder} albums={albums} recent={recent}
         open={open} play={play} enqueue={enqueue} inspect={inspect} />}
       {!discover && total !== null && total > 0 && <VirtualCatalog
-        pages={pages} total={total} load={load} kind={kind} scroll={scroll} open={open}
+        pages={pages} total={total} load={load} kind={kind} scrollElement={scrollElement} open={open}
+        restoreTop={restoring ? initialTop : undefined} canClampScroll={firstPageSettled} onScrollRestored={finishRestore}
         play={id => play(id, albumId, playlistId)} enqueue={enqueue} inspect={inspect} />}
       {!failure && total === null && <p className="catalog-message" role="status">Loading your library…</p>}
       {total === 0 && <p className="catalog-message">{query ? 'No matches found.' : 'There’s nothing here yet.'}</p>}
@@ -232,48 +261,63 @@ function pageOffset(index: number) {
   return Math.floor(index / pageSize) * pageSize
 }
 
-function VirtualCatalog({ pages, total, load, kind, scroll, open, play, enqueue, inspect }: {
+function VirtualCatalog({ pages, total, load, kind, scrollElement, open, play, enqueue, inspect, restoreTop, canClampScroll, onScrollRestored }: {
   pages: Map<number, Item[]>
   total: number
   load: (offset: number) => void
   kind: LibraryQuery['kind']
-  scroll: RefObject<HTMLDivElement | null>
+  scrollElement: HTMLDivElement | null
   open: (detail: Detail) => void
   play: (id: string) => void
   enqueue: (id: string) => void
   inspect?: (id: string) => void
+  restoreTop?: number
+  canClampScroll: boolean
+  onScrollRestored: () => void
 }) {
   const list = useRef<HTMLDivElement>(null)
-  const [geometry, setGeometry] = useState({ width: 1000, margin: 0 })
+  const [geometry, setGeometry] = useState<{ width: number; margin: number }>()
+  const { width, margin } = geometry ?? { width: 1000, margin: 0 }
   const grid = kind !== 'tracks'
-  const columns = grid ? Math.max(1, Math.min(6, Math.floor((geometry.width + 16) / 145))) : 1
-  const rowHeight = grid ? Math.floor((geometry.width - (columns - 1) * 16) / columns) + 66 : 64
+  const columns = grid ? Math.max(1, Math.min(6, Math.floor((width + 16) / 145))) : 1
+  const rowHeight = grid ? Math.floor((width - (columns - 1) * 16) / columns) + 66 : 64
+  const rowCount = Math.ceil(total / columns)
 
   useLayoutEffect(() => {
     const element = list.current
-    const scroller = scroll.current
-    if (!element || !scroller) return
+    if (!element || !scrollElement) return
     const measure = () => {
-      const margin = Math.round(element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop)
+      const margin = Math.round(element.getBoundingClientRect().top - scrollElement.getBoundingClientRect().top + scrollElement.scrollTop)
       const width = element.clientWidth
-      setGeometry(previous => previous.margin === margin && previous.width === width ? previous : { margin, width })
+      setGeometry(previous => previous?.margin === margin && previous.width === width ? previous : { margin, width })
     }
     measure()
     const observer = new ResizeObserver(measure)
-    observer.observe(scroller)
+    observer.observe(scrollElement)
     if (element.parentElement) observer.observe(element.parentElement)
     return () => observer.disconnect()
-  }, [scroll])
+  }, [scrollElement])
 
   const rows = useVirtualizer({
-    count: Math.ceil(total / columns),
-    getScrollElement: () => scroll.current,
+    count: rowCount,
+    getScrollElement: () => scrollElement,
     estimateSize: () => rowHeight,
-    scrollMargin: geometry.margin,
+    scrollMargin: margin,
+    initialOffset: restoreTop,
     overscan: 4,
   })
 
   useLayoutEffect(() => { rows.measure() }, [rows, rowHeight, columns])
+
+  const gridHeight = rows.getTotalSize()
+  useLayoutEffect(() => {
+    if (restoreTop === undefined || !scrollElement || !geometry || gridHeight !== rowCount * rowHeight) return
+    const maxTop = Math.max(0, scrollElement.scrollHeight - scrollElement.clientHeight)
+    // A cached first page can report a shorter grid until the current catalog reply arrives.
+    if (restoreTop > maxTop && !canClampScroll) return
+    rows.scrollToOffset(Math.min(restoreTop, maxTop))
+    onScrollRestored()
+  }, [scrollElement, rows, restoreTop, geometry, gridHeight, rowCount, rowHeight, canClampScroll, onScrollRestored])
 
   const visible = rows.getVirtualItems()
   const firstRow = visible[0]?.index
@@ -286,9 +330,9 @@ function VirtualCatalog({ pages, total, load, kind, scroll, open, play, enqueue,
       load(offset)
   }, [firstRow, lastRow, columns, total, load])
 
-  return <div ref={list} role="list" className="virtual-catalog" style={{ height: rows.getTotalSize() }}>
+  return <div ref={list} role="list" className="virtual-catalog" style={{ height: gridHeight }}>
     {visible.map(row => <div key={row.key} role="presentation" className="virtual-row"
-      style={{ transform: 'translateY(' + (row.start - geometry.margin) + 'px)', height: row.size, gridTemplateColumns: 'repeat(' + columns + ', minmax(0, 1fr))' }}>
+      style={{ transform: 'translateY(' + (row.start - margin) + 'px)', height: row.size, gridTemplateColumns: 'repeat(' + columns + ', minmax(0, 1fr))' }}>
       {Array.from({ length: Math.min(columns, total - row.index * columns) }, (_, column) => {
         const index = row.index * columns + column
         const offset = pageOffset(index)
