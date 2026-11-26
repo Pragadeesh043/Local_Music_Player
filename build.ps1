@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$project = Join-Path $PSScriptRoot 'src\Soundroom\Soundroom.csproj'
+$project = Join-Path $PSScriptRoot 'src\MP4A.Desktop\MP4A.Desktop.csproj'
 $output = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $PSScriptRoot "artifacts\$Configuration" }
 $localSdk = Join-Path $PSScriptRoot '.dotnet\dotnet.exe'
 $dotnet = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
@@ -17,15 +17,15 @@ $env:NUGET_PACKAGES = Join-Path $PSScriptRoot '.nuget\packages'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
 
-$glassroom = Join-Path $PSScriptRoot 'src\Glassroom\ui'
-Push-Location $glassroom
+$web = Join-Path $PSScriptRoot 'src\MP4A.Web'
+Push-Location $web
 try {
     if (!$NoRestore -or !(Test-Path -LiteralPath 'node_modules\.bin\vite.cmd')) {
         & npm.cmd ci
-        if ($LASTEXITCODE -ne 0) { throw "Restoring Glassroom dependencies failed with exit code $LASTEXITCODE." }
+        if ($LASTEXITCODE -ne 0) { throw "Restoring web UI dependencies failed with exit code $LASTEXITCODE." }
     }
     & npm.cmd run build
-    if ($LASTEXITCODE -ne 0) { throw "Building Glassroom failed with exit code $LASTEXITCODE." }
+    if ($LASTEXITCODE -ne 0) { throw "Building the web UI failed with exit code $LASTEXITCODE." }
 }
 finally { Pop-Location }
 
@@ -41,7 +41,7 @@ if ($Installer) {
         New-Item -ItemType Directory -Path $buildFolder -Force | Out-Null
         & $dotnet build $project -c $Configuration -o $payload @buildOptions
         if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE." }
-        foreach ($file in 'MP4A.exe', 'MP4A.pri', 'App.xbf', 'UI\MainWindow.xbf', 'coreclr.dll', 'phonon.dll',
+        foreach ($file in 'MP4A.exe', 'MP4A.pri', 'App.xbf', 'UI\MainWindow.xbf', 'Assets\MP4A.ico', 'coreclr.dll', 'phonon.dll',
             'WebView2Loader.dll', 'Native\SteamAudio-LICENSE.md', 'Native\SteamAudio-THIRDPARTY.md', 'Glassroom\index.html') {
             if (!(Test-Path -LiteralPath (Join-Path $payload $file) -PathType Leaf)) {
                 throw "Installer payload is missing $file."
@@ -50,7 +50,7 @@ if ($Installer) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md'), (Join-Path $PSScriptRoot 'LICENSE'),
             (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.md') -Destination $payload
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs') -Destination $payload -Recurse
-        & (Join-Path $PSScriptRoot 'packaging\Copy-Notices.ps1') -Payload $payload -UiDirectory $glassroom -Project $project
+        & (Join-Path $PSScriptRoot 'packaging\Copy-Notices.ps1') -Payload $payload -UiDirectory $web -Project $project
         $installerScript = Join-Path $PSScriptRoot 'packaging\MP4A.nsi'
         $temporarySetup = Join-Path $buildFolder 'MP4A-Setup-x64.exe'
         & $compiler "/DAPP_PAYLOAD=$payload" "/DSETUP_FILE=$temporarySetup" $installerScript

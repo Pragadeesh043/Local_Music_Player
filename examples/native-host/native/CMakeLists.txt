@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
-project(Glassroom LANGUAGES CXX)
+project(MP4ADemo LANGUAGES CXX)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "Glassroom requires an x64 Windows build.")
+    message(FATAL_ERROR "MP4ADemo requires an x64 Windows build.")
 endif()
 
 set(WEBVIEW2_ROOT "" CACHE PATH "Extracted Microsoft.Web.WebView2 NuGet package")
 set(NLOHMANN_INCLUDE_DIR "" CACHE PATH "Optional directory containing nlohmann/json.hpp")
-set(UI_DIST "${CMAKE_CURRENT_SOURCE_DIR}/../ui/dist" CACHE PATH "Built Vite UI")
+set(UI_DIST "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/MP4A.Web/dist" CACHE PATH "Built Vite UI")
 if(NOT EXISTS "${WEBVIEW2_ROOT}/build/native/include/WebView2.h")
     message(FATAL_ERROR "Set WEBVIEW2_ROOT to the extracted WebView2 NuGet package.")
 endif()
@@ -34,24 +34,24 @@ else()
 endif()
 
 set(WEBVIEW2_NATIVE "${WEBVIEW2_ROOT}/build/native")
-add_executable(Glassroom WIN32 Main.cpp Worker.cpp Protocol.cpp DemoEngine.cpp)
-target_compile_features(Glassroom PRIVATE cxx_std_20)
-target_compile_definitions(Glassroom PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+add_executable(MP4ADemo WIN32 Main.cpp Worker.cpp Protocol.cpp DemoEngine.cpp)
+target_compile_features(MP4ADemo PRIVATE cxx_std_20)
+target_compile_definitions(MP4ADemo PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
     WINVER=0x0A00 _WIN32_WINNT=0x0A00)
-target_include_directories(Glassroom PRIVATE "${WEBVIEW2_NATIVE}/include")
-target_link_libraries(Glassroom PRIVATE nlohmann_json::nlohmann_json
+target_include_directories(MP4ADemo PRIVATE "${WEBVIEW2_NATIVE}/include")
+target_link_libraries(MP4ADemo PRIVATE nlohmann_json::nlohmann_json
     "${WEBVIEW2_NATIVE}/x64/WebView2Loader.dll.lib" dwmapi ole32 shell32 uuid user32 gdi32)
 if(MSVC)
-    target_compile_options(Glassroom PRIVATE /W4 /utf-8 /permissive- /EHsc)
+    target_compile_options(MP4ADemo PRIVATE /W4 /utf-8 /permissive- /EHsc)
 elseif(MINGW)
-    target_compile_options(Glassroom PRIVATE -Wall -Wextra -Wno-unknown-pragmas)
-    target_link_options(Glassroom PRIVATE -municode -static)
+    target_compile_options(MP4ADemo PRIVATE -Wall -Wextra -Wno-unknown-pragmas)
+    target_link_options(MP4ADemo PRIVATE -municode -static)
 endif()
 
 add_custom_target(stage ALL
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${UI_DIST}" "$<TARGET_FILE_DIR:Glassroom>/ui"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../demo/catalog.json" "$<TARGET_FILE_DIR:Glassroom>/catalog.json"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${WEBVIEW2_NATIVE}/x64/WebView2Loader.dll" "$<TARGET_FILE_DIR:Glassroom>/WebView2Loader.dll"
-    DEPENDS Glassroom
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${UI_DIST}" "$<TARGET_FILE_DIR:MP4ADemo>/ui"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/MP4A.Web/demo/catalog.json" "$<TARGET_FILE_DIR:MP4ADemo>/catalog.json"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${WEBVIEW2_NATIVE}/x64/WebView2Loader.dll" "$<TARGET_FILE_DIR:MP4ADemo>/WebView2Loader.dll"
+    DEPENDS MP4ADemo
     VERBATIM
 )

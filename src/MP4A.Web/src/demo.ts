@@ -1,4 +1,4 @@
-import catalog from '../../demo/catalog.json'
+import catalog from '../demo/catalog.json'
 import type { Bridge, Command, Commands, LibraryQuery, Playback, PlayerEvent, Request, Track } from './bridge'
 import type { LiveSignal } from './desktop'
 

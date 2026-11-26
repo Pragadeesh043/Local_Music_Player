@@ -23,6 +23,7 @@ MP4A plays files where they are and stores settings, its SQLite catalog, artwork
 ## Project
 
 - [Build and contribute](docs/development.md)
+- [GitHub and Microsoft Store release checklist](docs/release.md)
 - [Audio modes, DSP, and verification](docs/audio.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.md)
 

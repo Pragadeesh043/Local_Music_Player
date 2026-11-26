@@ -15,7 +15,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="..\Glassroom\ui\dist\**\*" Link="Glassroom\%(RecursiveDir)%(Filename)%(Extension)"
+    <Content Include="..\MP4A.Web\dist\**\*" Link="Glassroom\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\MP4A.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />

@@ -27,7 +27,7 @@ if (!$WebView2Root) {
     }
 }
 
-Push-Location (Join-Path $PSScriptRoot 'ui')
+Push-Location (Join-Path $PSScriptRoot '../../src/MP4A.Web')
 try {
     npm.cmd ci
     if ($LASTEXITCODE) { throw 'Installing the UI dependencies failed.' }
@@ -51,4 +51,4 @@ if ($LASTEXITCODE) { throw 'Configuring the C++ host failed.' }
 cmake --build $BuildDirectory --config $Configuration
 if ($LASTEXITCODE) { throw 'Building the C++ host failed.' }
 
-Write-Host "Launch $(Join-Path $BuildDirectory "$Configuration/Glassroom.exe")"
+Write-Host "Launch $(Join-Path $BuildDirectory "$Configuration/MP4ADemo.exe")"

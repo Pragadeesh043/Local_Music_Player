@@ -184,7 +184,7 @@ public:
 
     void showError(const char* message)
     {
-        MessageBoxW(window_, widen(message).c_str(), L"Glassroom", MB_OK | MB_ICONERROR);
+        MessageBoxW(window_, widen(message).c_str(), L"MP4A Native Demo", MB_OK | MB_ICONERROR);
         if (window_) DestroyWindow(window_);
     }
 
@@ -358,7 +358,7 @@ int run(HINSTANCE instance, int show, bool acrylic)
     const auto root = executableFolder();
     const auto profile = profileFolder();
     fs::create_directories(profile / L"Artwork");
-    if (!fs::exists(root / L"ui" / L"index.html")) throw std::runtime_error("Build and stage the Glassroom UI first.");
+    if (!fs::exists(root / L"ui" / L"index.html")) throw std::runtime_error("Build and stage the MP4A web UI first.");
     std::ifstream catalog(root / L"catalog.json");
     if (!catalog) throw std::runtime_error("The demo catalog is missing.");
     auto engine = makeDemoEngine(Json::parse(catalog));
@@ -372,7 +372,7 @@ int run(HINSTANCE instance, int show, bool acrylic)
     if (!RegisterClassW(&windowClass)) throw std::runtime_error("Could not register the player window.");
     const auto host = std::make_shared<Host>(root, profile, acrylic);
     const auto dpi = GetDpiForSystem();
-    const auto window = CreateWindowExW(0, WindowClass, L"Glassroom", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+    const auto window = CreateWindowExW(0, WindowClass, L"MP4A Native Demo", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, MulDiv(1230, dpi, 96), MulDiv(820, dpi, 96), nullptr, nullptr, instance, host.get());
     if (!window) throw std::runtime_error("Could not create the player window.");
     try { host->start(std::move(engine)); }
@@ -397,7 +397,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show)
     if (FAILED(initialized)) return 1;
     int result = 1;
     try { result = run(instance, show, std::wstring_view(commandLine) == L"--acrylic"); }
-    catch (const std::exception& error) { MessageBoxW(nullptr, widen(error.what()).c_str(), L"Glassroom", MB_OK | MB_ICONERROR); }
+    catch (const std::exception& error) { MessageBoxW(nullptr, widen(error.what()).c_str(), L"MP4A Native Demo", MB_OK | MB_ICONERROR); }
     CoUninitialize();
     return result;
 }
