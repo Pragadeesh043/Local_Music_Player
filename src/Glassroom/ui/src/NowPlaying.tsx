@@ -276,7 +276,7 @@ function PlayerTabs({ player, track, notify, inspect }: { player: Player; track:
   const [selection, setSelection] = useState<number>()
   const current = selection ?? (error || data?.length === 0 ? 1 : 0)
   const tabs = useRef<HTMLDivElement>(null)
-  return <section className="player-tabs glass">
+  return <section className="player-tabs">
     <div className="player-tab-list" role="tablist" aria-label="Now Playing views" ref={tabs} onKeyDown={event => {
       const length = playerTabs.length
       const index = { ArrowLeft: (current - 1 + length) % length, ArrowRight: (current + 1) % length, Home: 0, End: length - 1 }[event.key]
