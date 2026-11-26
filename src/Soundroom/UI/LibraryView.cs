@@ -25,6 +25,7 @@ public sealed partial class MainWindow
             catalogReady = true;
             StartSourceMonitoring();
             RefreshLibrary();
+            _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error) { ShowError("Preparing the library index", error); }
@@ -108,9 +109,10 @@ public sealed partial class MainWindow
     private async Task<object> ReadTrackDetails(string id)
     {
         var item = WithMountedPath(await FindWebTrackAsync(id));
+        var cover = await Task.Run(() => thumbnails.ReadCovers([id]).GetValueOrDefault(id), libraryLifetime.Token);
         return new { item.Title, item.Artist, item.Album, item.Path, item.Format, item.FileSize, item.Codec,
             item.SourceRate, item.Bits, item.BitRate, item.Channels, item.Layout, item.Duration, item.Rating,
-            item.PlayCount, item.Analysis, item.Tags, artwork = WebArtwork(item) };
+            item.PlayCount, item.Analysis, item.Tags, artwork = WebArtwork(item, cover), artworkPreview = cover?.Preview };
     }
 
     private async Task RateTrack(string id, int rating)

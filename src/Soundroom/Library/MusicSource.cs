@@ -49,8 +49,11 @@ internal sealed record FileStamp(long Length, long ModifiedUtc);
 
 internal static class SourceScanner
 {
+    private static readonly string[] ArtworkExtensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
+    public static bool IsArtwork(string path) => ArtworkExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     public static Dictionary<string, FileStamp> Snapshot(string root, List<string>? inaccessible = null,
-        Action? waitForPlayback = null)
+        Action? waitForPlayback = null, bool includeArtwork = false)
     {
         var result = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
         var pending = new Stack<DirectoryInfo>();
@@ -71,7 +74,8 @@ internal static class SourceScanner
                     if (entry is DirectoryInfo directory)
                         pending.Push(directory);
                     else if (entry is FileInfo file && !file.Extension.Equals(".iso", StringComparison.OrdinalIgnoreCase) &&
-                             Media.Extensions.Contains(file.Extension, StringComparer.OrdinalIgnoreCase))
+                             (Media.Extensions.Contains(file.Extension, StringComparer.OrdinalIgnoreCase) ||
+                              includeArtwork && IsArtwork(file.Name)))
                         result[Path.GetRelativePath(root, file.FullName)] = new(file.Length, file.LastWriteTimeUtc.Ticks);
                 }
             }

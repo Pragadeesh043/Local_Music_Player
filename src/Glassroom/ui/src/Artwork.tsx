@@ -1,17 +1,20 @@
 import { AudioLines } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { cachedArtwork, loadArtwork } from './artworkResource'
+import { cachedArtwork, cachedArtworkPreview, loadArtwork } from './artworkResource'
 
-export function Artwork({ src, className = '', loading = 'lazy' }: {
-  src?: string
+export function Artwork({ src, preview, className = '', loading = 'lazy' }: {
+  src?: string | null
+  preview?: string | null
   className?: string
   loading?: 'lazy' | 'eager'
 }) {
   const container = useRef<HTMLSpanElement>(null)
   const [loaded, setLoaded] = useState<{ source: string; url: string | null }>()
   const [failed, setFailed] = useState<string>()
+  const [painted, setPainted] = useState<string>()
   const cached = src ? cachedArtwork(src) : undefined
   const url = cached !== undefined ? cached : (loaded?.source === src ? loaded?.url : undefined)
+  const fallback = preview || (src ? cachedArtworkPreview(src) : undefined)
 
   useEffect(() => {
     const element = container.current
@@ -39,15 +42,18 @@ export function Artwork({ src, className = '', loading = 'lazy' }: {
       observer = new IntersectionObserver(items => {
         if (items.at(-1)?.isIntersecting) start()
         else stop()
-      })
+      }, { root: element.closest('.catalog-scroll'), rootMargin: '240px 0px' })
       observer.observe(element)
     }
     return () => { stop(); observer?.disconnect() }
   }, [src, loading])
 
-  return <span ref={container} className={'artwork ' + className}>
+  return <span ref={container} className={'artwork ' + className}
+    style={fallback ? { backgroundImage: `url("${fallback}")`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>
     {url && failed !== url
-      ? <img src={url} crossOrigin="anonymous" alt="" loading={loading} draggable={false} onError={() => setFailed(url)} />
-      : <AudioLines aria-hidden="true" />}
+      ? <img className={fallback && painted !== url ? 'artwork-full artwork-pending' : 'artwork-full'}
+        src={url} crossOrigin="anonymous" alt="" loading={loading} draggable={false}
+        onLoad={() => setPainted(url)} onError={() => setFailed(url)} />
+      : !fallback && <AudioLines aria-hidden="true" />}
   </span>
 }

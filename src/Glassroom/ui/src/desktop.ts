@@ -18,7 +18,7 @@ export type LibrarySettings = {
 export type TrackDetails = {
   title: string; artist: string; album: string; path: string; format: string; fileSize: number
   codec: string; sourceRate: number; bits: number; bitRate: number; channels: number; layout: string
-  duration: number; rating: number; playCount: number; artwork: string; tags: Record<string, string>
+  duration: number; rating: number; playCount: number; artwork: string | null; artworkPreview?: string | null; tags: Record<string, string>
   analysis: {
     lufs: number | null; truePeak: number | null; dynamicRange: number | null; replayGain: number | null
     spectrum: string; integrity: string; albumLufs: number | null; albumReplayGain: number | null

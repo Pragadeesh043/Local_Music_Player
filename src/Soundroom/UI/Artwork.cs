@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Windows.Data.Pdf;
+using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
 
@@ -8,6 +10,8 @@ namespace Soundroom;
 public sealed partial class MainWindow
 {
     private readonly ArtworkCache thumbnails;
+    private readonly ConcurrentDictionary<string, Lazy<Task<(StoredCover? Cover, byte[] Bytes)>>> coverJobs =
+        new(StringComparer.OrdinalIgnoreCase);
     private sealed record BookletAsset(string Name, string Path, int EmbeddedIndex = -1)
     {
         public bool Pdf => EmbeddedIndex < 0 && System.IO.Path.GetExtension(Path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
@@ -16,20 +20,125 @@ public sealed partial class MainWindow
     private BookletAsset[] bookletAssets = [];
 
     private static IEnumerable<string> FindArtwork(string folder) => !Directory.Exists(folder) ? [] :
-        Directory.EnumerateFiles(folder).Where(item => new[] { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif" }
-            .Contains(Path.GetExtension(item), StringComparer.OrdinalIgnoreCase))
+        Directory.EnumerateFiles(folder).Where(SourceScanner.IsArtwork)
         .OrderBy(item => Path.GetFileNameWithoutExtension(item).ToLowerInvariant() switch
         {
             "cover" or "folder" or "front" => 0, "back" or "disc" or "artist" or "booklet" => 1, _ => 2
-        });
+        }).ThenBy(item => item, StringComparer.OrdinalIgnoreCase);
 
-    private async Task<byte[]> ReadCoverBytesAsync(Track selected, CancellationToken cancellation)
+    private async Task<(byte[] Bytes, string Path, bool Embedded)> ReadCoverSourceAsync(Track selected, CancellationToken cancellation)
     {
         var embedded = await thumbnails.GetAsync(selected.Path, embedded: true, cancellation).ConfigureAwait(false);
         if (embedded.Length > 0)
-            return embedded;
+            return (embedded, selected.Path, true);
         return FindArtwork(selected.Folder).FirstOrDefault() is { } artwork
-            ? await thumbnails.GetAsync(artwork, embedded: false, cancellation).ConfigureAwait(false) : [];
+            ? (await thumbnails.GetAsync(artwork, embedded: false, cancellation).ConfigureAwait(false), artwork, false)
+            : ([], selected.Path, true);
+    }
+
+    private async Task<(StoredCover? Cover, byte[] Bytes)> PrepareCoverAsync(Track item, bool refresh = false)
+    {
+        var requested = new Lazy<Task<(StoredCover? Cover, byte[] Bytes)>>(() => Task.Run<(StoredCover? Cover, byte[] Bytes)>(async () =>
+        {
+            try
+            {
+                var cancellation = libraryLifetime.Token;
+                var existing = thumbnails.ReadCovers([item.Key]).GetValueOrDefault(item.Key);
+                if (existing is not null && (!refresh || !File.Exists(item.Path)))
+                    return (existing, existing.Asset is { } id ? thumbnails.ReadCoverAsset(id) : []);
+                if (!File.Exists(item.Path))
+                    return (null, []);
+                var (bytes, path, embedded) = await ReadCoverSourceAsync(item, cancellation).ConfigureAwait(false);
+                if (bytes.Length == 0 && existing?.Asset is { } previous)
+                    return (existing, thumbnails.ReadCoverAsset(previous));
+                var cover = await thumbnails.StoreCoverAsync(item.Key, bytes,
+                    image => EncodeCoverPreviewAsync(image, path, embedded, cancellation)).ConfigureAwait(false);
+                return (cover, bytes);
+            }
+            finally { coverJobs.TryRemove(item.Key, out _); }
+        }, CancellationToken.None));
+        var job = coverJobs.GetOrAdd(item.Key, requested);
+        var result = await job.Value.ConfigureAwait(false);
+        return refresh && !ReferenceEquals(job, requested)
+            ? await PrepareCoverAsync(item, refresh: true).ConfigureAwait(false) : result;
+    }
+
+    private async Task WarmCoverAsync(Track item, bool refresh = false)
+    {
+        try
+        {
+            await SourceScanner.WaitForPlaybackAsync(() => Volatile.Read(ref playback)?.NeedsScanBackpressure == true,
+                libraryLifetime.Token);
+            await PrepareCoverAsync(item, refresh);
+        }
+        catch (OperationCanceledException) when (libraryLifetime.IsCancellationRequested) { }
+        catch (Exception error) { Diagnostics.Write("Indexing cover artwork", error); }
+    }
+
+    private async Task WarmLibraryArtworkAsync(bool refresh = false)
+    {
+        var cancellation = libraryLifetime.Token;
+        var mounts = new Dictionary<string, string>(mountedSources, StringComparer.OrdinalIgnoreCase);
+        const int batchSize = 100;
+        await Task.Run(async () =>
+        {
+            var query = new LibraryQuery("", new SmartFilter());
+            for (int offset = 0; !cancellation.IsCancellationRequested; offset += batchSize)
+            {
+                var page = library.Page(query, offset, batchSize);
+                var stored = refresh ? null : thumbnails.ReadCovers(page.Tracks.Select(item => item.Key));
+                foreach (var item in page.Tracks)
+                {
+                    if (cancellation.IsCancellationRequested)
+                        return;
+                    if (stored?.ContainsKey(item.Key) == true)
+                        continue;
+                    if (item.SourceId is null)
+                        await WarmCoverAsync(item, refresh);
+                    else if (item.RelativePath is { } path && mounts.TryGetValue(item.SourceId, out var root))
+                        await WarmCoverAsync(item with { Path = Path.Combine(root, path) }, refresh);
+                }
+                if (offset + batchSize >= page.Total)
+                    break;
+            }
+        }, cancellation);
+    }
+
+    private static async Task<string> EncodeCoverPreviewAsync(byte[] bytes, string path, bool embedded, CancellationToken cancellation)
+    {
+        const int size = 96;
+        try
+        {
+            using var input = await ImageStream(bytes) ?? throw new InvalidOperationException("The cover is empty.");
+            var decoder = await BitmapDecoder.CreateAsync(input);
+            double scale = Math.Min(1, (double)size / Math.Max(decoder.PixelWidth, decoder.PixelHeight));
+            var transform = new BitmapTransform
+            {
+                ScaledWidth = Math.Max(1, (uint)Math.Round(decoder.PixelWidth * scale)),
+                ScaledHeight = Math.Max(1, (uint)Math.Round(decoder.PixelHeight * scale)),
+                InterpolationMode = BitmapInterpolationMode.Fant
+            };
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore,
+                transform, ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.ColorManageToSRgb);
+            using var output = new InMemoryRandomAccessStream();
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.JpegEncoderId, output);
+            encoder.SetSoftwareBitmap(bitmap);
+            await encoder.FlushAsync();
+            output.Seek(0);
+            using var stream = output.AsStreamForRead();
+            using var preview = new MemoryStream();
+            await stream.CopyToAsync(preview).ConfigureAwait(false);
+            return "data:image/jpeg;base64," + Convert.ToBase64String(preview.ToArray());
+        }
+        catch (Exception error)
+        {
+            Diagnostics.Write("Encoding a cover preview", error);
+            var (preview, _) = await Media.ThumbnailAsync(path, embedded, cancellation, size).ConfigureAwait(false);
+            if (preview.Length == 0 && bytes.Length <= 24 * 1024)
+                preview = bytes;
+            return preview.Length == 0 ? "" :
+                $"data:image/{(ArtworkCache.IsWebP(preview) ? "webp" : "png")};base64,{Convert.ToBase64String(preview)}";
+        }
     }
 
     private async Task<object> ReadBooklet(string id)

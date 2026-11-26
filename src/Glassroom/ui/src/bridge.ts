@@ -9,6 +9,7 @@ export type Track = {
   albumId: string
   album: string
   artwork?: string
+  artworkPreview?: string | null
   duration: number
   number: number
   codec?: string
@@ -26,6 +27,7 @@ export type Album = {
   genre: string
   edition?: string
   artwork?: string
+  artworkPreview?: string | null
   firstTrackId: string
 }
 

@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Soundroom;
 
-internal sealed class ArtworkCache(string directory, int memoryLimit = 16 * 1024 * 1024,
+internal sealed partial class ArtworkCache(string directory, int memoryLimit = 16 * 1024 * 1024,
     int diskLimit = 64 * 1024 * 1024, CancellationToken lifetime = default)
 {
     private const int MaxThumbnail = 2 * 1024 * 1024;
@@ -136,6 +136,14 @@ internal sealed class ArtworkCache(string directory, int memoryLimit = 16 * 1024
                 CREATE INDEX IF NOT EXISTS thumbnail_access ON thumbnails(accessed, key);
                 CREATE INDEX IF NOT EXISTS thumbnail_miss_access ON thumbnails(accessed, key) WHERE image IS NULL;
                 CREATE INDEX IF NOT EXISTS thumbnail_expiry ON thumbnails(expires) WHERE expires > 0;
+                CREATE TABLE IF NOT EXISTS cover_assets(
+                    id TEXT PRIMARY KEY, image BLOB NOT NULL, preview TEXT NOT NULL
+                ) WITHOUT ROWID;
+                CREATE TABLE IF NOT EXISTS cover_links(
+                    track TEXT PRIMARY KEY COLLATE NOCASE, asset TEXT, retry_after INTEGER NOT NULL
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS cover_links_asset ON cover_links(asset);
+                DELETE FROM cover_assets WHERE NOT EXISTS (SELECT 1 FROM cover_links WHERE asset=cover_assets.id);
                 """;
             command.ExecuteNonQuery();
             initialized = true;

@@ -161,7 +161,7 @@ export function App({ player }: { player: Player }) {
               <motion.div className="route-frame" key={JSON.stringify([route, query, folder, detail?.item.id ?? '', desktop?.catalogRevision ?? 0])}
                 initial={{ opacity: 0, y: 9 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.17 }}>
-                <CatalogView bridge={player.bridge} route={route} query={query} folder={folder} detail={detail} open={setDetail} back={() => setDetail(null)}
+                <CatalogView bridge={player.bridge} revision={catalogRevision ?? 0} route={route} query={query} folder={folder} detail={detail} open={setDetail} back={() => setDetail(null)}
                   recent={player.recentTracks()}
                   play={(id, albumId, playlistId) => notify(player.send('play', { id, ...(albumId && { albumId }), ...(playlistId && { playlistId }),
                     ...(query && { query }), ...(folder && { folder }) }))}

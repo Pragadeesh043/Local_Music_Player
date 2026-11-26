@@ -26,7 +26,7 @@ public sealed partial class MainWindow
     private sealed record WebStatus(string? Key, bool Playing, double Volume, bool VolumeEnabled, string Status,
         int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath);
     private sealed record WebTrack(string Id, string Title, string Artist, string AlbumId, string Album,
-        string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate);
+        string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate, string? ArtworkPreview);
 
     private async void InitializeGlassroom()
     {
@@ -314,10 +314,12 @@ public sealed partial class MainWindow
     private object WebPlayback(WebStatus state)
     {
         var current = track;
-        WebTrack[] queue = WebQueue();
+        var items = current is null ? webQueued : new[] { current }.Concat(webQueued);
+        var covers = thumbnails.ReadCovers(items.Select(item => item.Key));
+        WebTrack[] queue = items.Select(item => ToWebTrack(item, covers.GetValueOrDefault(item.Key))).ToArray();
         return new
         {
-            track = current is null ? null : ToWebTrack(current),
+            track = current is null ? null : queue[0],
             state.Playing,
             position = WebPosition(),
             state.Volume,

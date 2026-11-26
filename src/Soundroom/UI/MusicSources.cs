@@ -39,6 +39,7 @@ public sealed partial class MainWindow
 
             var mounts = new Dictionary<string, string>(mountedSources, StringComparer.OrdinalIgnoreCase);
             int hidden = await Task.Run(() => library.HideMissingFiles(mounts, cancellation), cancellation);
+            await WarmLibraryArtworkAsync(refresh: true);
             cancellation.ThrowIfCancellationRequested();
             ResetPlaybackOrder();
             RefreshLibrary();
@@ -151,6 +152,7 @@ public sealed partial class MainWindow
             {
                 Interlocked.Increment(ref queueRevision);
                     RefreshLibrary();
+                _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
             }
             if (reindexing || sourceScan is { IsCompleted: false })
                 return;
@@ -215,7 +217,7 @@ public sealed partial class MainWindow
         Task WaitForPlayback() => SourceScanner.WaitForPlaybackAsync(NeedsPlaybackBuffer, cancellation);
         var inaccessible = new List<string>();
         var snapshot = await Task.Run(() => SourceScanner.Snapshot(root, inaccessible,
-            () => WaitForPlayback().GetAwaiter().GetResult()), cancellation);
+            () => WaitForPlayback().GetAwaiter().GetResult(), includeArtwork: true), cancellation);
         if (!ScanStillMounted(source, root))
             return;
         var changed = snapshot.Where(file => !old.TryGetValue(file.Key, out var stamp) || stamp != file.Value).ToArray();
@@ -225,7 +227,12 @@ public sealed partial class MainWindow
             return;
         status = $"Indexing {source.Name}…";
         int failures = 0;
-        foreach (var file in changed.OrderBy(file => !file.Key.EndsWith(".cue", StringComparison.OrdinalIgnoreCase)))
+        var coverFolders = changed.Select(file => file.Key).Concat(deleted).Where(SourceScanner.IsArtwork)
+            .Select(file => Path.GetDirectoryName(Path.Combine(root, file))!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var warmed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in changed.Where(file => !SourceScanner.IsArtwork(file.Key))
+            .OrderBy(file => !file.Key.EndsWith(".cue", StringComparison.OrdinalIgnoreCase)))
         {
             await WaitForPlayback();
             if (!ScanStillMounted(source, root))
@@ -247,6 +254,8 @@ public sealed partial class MainWindow
                     var prior = indexed.FirstOrDefault(t => t.Key == item.Key) ??
                         library.LegacyTrack(item.Path, item.CueIndex);
                     SaveTrack(prior is null ? item : item with { Rating = prior.Rating, PlayCount = prior.PlayCount });
+                    await WarmCoverAsync(item, refresh: true);
+                    warmed.Add(item.Key);
                 }
                 foreach (var item in indexed.Where(item => !current.Any(now => now.Key == item.Key)))
                     SaveTrack(item with { Missing = true });
@@ -260,7 +269,7 @@ public sealed partial class MainWindow
         }
         if (!ScanStillMounted(source, root) || source.Resolve(MusicSource.MountedVolumes()) != root)
             return;
-        foreach (string file in deleted)
+        foreach (string file in deleted.Where(file => !SourceScanner.IsArtwork(file)))
         {
             await WaitForPlayback();
             if (!ScanStillMounted(source, root))
@@ -269,6 +278,22 @@ public sealed partial class MainWindow
                 SaveTrack(item with { Missing = true });
             old.Remove(file);
         }
+        if (coverFolders.Count > 0)
+        {
+            var tracks = await Task.Run(() => library.Tracks().Where(item => item.SourceId == source.Id &&
+                !item.Missing && coverFolders.Contains(item.Folder)).ToArray(), cancellation);
+            foreach (var item in tracks)
+            {
+                if (!ScanStillMounted(source, root))
+                    return;
+                if (!warmed.Contains(item.Key))
+                    await WarmCoverAsync(item, refresh: true);
+            }
+        }
+        foreach (var file in changed.Where(file => SourceScanner.IsArtwork(file.Key)))
+            old[file.Key] = file.Value;
+        foreach (string file in deleted.Where(SourceScanner.IsArtwork))
+            old.Remove(file);
         library.Put("scan:" + source.Id, old);
         RefreshLibrary();
         status = failures == 0 ? $"{source.Name} is up to date." : $"{source.Name}: {failures} files could not be indexed. See the Soundroom log.";

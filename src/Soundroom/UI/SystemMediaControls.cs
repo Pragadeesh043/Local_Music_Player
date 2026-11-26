@@ -146,10 +146,10 @@ public sealed partial class MainWindow
         try
         {
             var cancellation = libraryLifetime.Token;
-            var available = ResolvePlaybackTrack(selected);
+            var available = WithMountedPath(selected);
             var bytes = await Task.Run(async () =>
             {
-                var cover = await ReadCoverBytesAsync(available, cancellation).ConfigureAwait(false);
+                var (_, cover) = await PrepareCoverAsync(available).ConfigureAwait(false);
                 return ArtworkCache.IsWebP(cover) ? await EncodeMediaThumbnailAsync(cover).ConfigureAwait(false) : cover;
             }, cancellation);
             if (!ready || mediaTrackRevision != revision || bytes.Length == 0)

@@ -16,7 +16,7 @@ If the next track cannot finish preloading within the available audio buffer, So
 
 ## Artwork
 
-Now Playing and the library share thumbnails from embedded covers or folder artwork. SQLite stores up to 64 MiB of thumbnails in `%LOCALAPPDATA%\Soundroom\ArtworkThumbnails\artwork.db`. New thumbnails use WebP, and existing PNG entries remain reusable. The database records confirmed missing embedded covers separately from the image budget. Glassroom keeps recently used covers visible while checking for updates. Changes to file size or modification time invalidate thumbnails when the app next checks the source. Full-size artwork and booklets are available under **Track details**.
+Now Playing and the library share stored thumbnails from embedded covers or folder artwork. MP4A saves one copy of each distinct cover and a small preview in `%LOCALAPPDATA%\Soundroom\ArtworkThumbnails\artwork.db`. Catalog pages carry their previews, so covers stay visible while the full thumbnail decodes. Already stored covers remain available after restart and while a watched drive is offline. Existing libraries fill in their artwork store in the background. Scanning and reindexing update saved covers when new artwork is available. Full-size artwork and booklets are available under **Track details**.
 
 ## Output modes
 

@@ -3,6 +3,7 @@ const byteLimit = 32 * 1024 * 1024
 const entryLimit = 768
 const parallelRequests = 2
 const entries = new Map<string, { url: string | null; bytes: number; expires: number }>()
+const previews = new Map<string, string>()
 type Request = {
   urgentConsumers: number
   consumers: number
@@ -29,6 +30,8 @@ export function cachedArtwork(source: string): string | null | undefined {
   return entry.url
 }
 
+export const cachedArtworkPreview = (source: string) => previews.get(source)
+
 function drain() {
   while (fetching < parallelRequests && queued.size) {
     const next = [...queued].find(([, request]) => request.urgentConsumers > 0) ?? queued.entries().next().value!
@@ -39,6 +42,12 @@ function drain() {
     void fetch(source, { credentials: 'omit' }).then(async response => {
       const missing = response.status === 204 || response.status === 404
       if (!response.ok && !missing) throw new Error('Artwork is unavailable.')
+      const preview = response.headers.get('X-Artwork-Preview')
+      if (preview) {
+        previews.delete(source)
+        previews.set(source, preview)
+        if (previews.size > 4096) previews.delete(previews.keys().next().value!)
+      }
       const blob = missing ? null : await response.blob()
       const url = blob?.size ? URL.createObjectURL(blob) : null
       const bytes = blob?.size ?? 0

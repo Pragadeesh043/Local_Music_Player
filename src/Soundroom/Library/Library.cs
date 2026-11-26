@@ -155,12 +155,12 @@ internal static class Media
         (await ReadArtworkAsync(path, $"0:v:disp:attached_pic:{index}", 800, webp: false, default).ConfigureAwait(false)).Bytes;
 
     internal static async Task<(byte[] Bytes, bool NoEmbeddedCover)> ThumbnailAsync(
-        string path, bool embedded, CancellationToken cancellation)
+        string path, bool embedded, CancellationToken cancellation, int size = 640)
     {
         string map = embedded ? "0:v:disp:attached_pic:0" : "0:v:0";
-        var result = await ReadArtworkAsync(path, map, 640, webp: true, cancellation).ConfigureAwait(false);
+        var result = await ReadArtworkAsync(path, map, size, webp: true, cancellation).ConfigureAwait(false);
         if (result.Error.Contains("Unknown encoder 'libwebp'", StringComparison.OrdinalIgnoreCase))
-            result = await ReadArtworkAsync(path, map, 640, webp: false, cancellation).ConfigureAwait(false);
+            result = await ReadArtworkAsync(path, map, size, webp: false, cancellation).ConfigureAwait(false);
         return (result.Bytes, embedded && result.Bytes.Length == 0 &&
             result.Error.Contains("Stream map", StringComparison.Ordinal) &&
             result.Error.Contains("matches no streams", StringComparison.Ordinal));

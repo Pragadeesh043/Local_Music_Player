@@ -44,7 +44,7 @@ export function Dock({ player, notify, expand, active, queueVisible, toggleQueue
       <Transport player={player} notify={notify} />
     </div>
     <button className="dock-track" onClick={() => expand()} disabled={!state.track} aria-label="Expand Now Playing">
-      <motion.span className="dock-art" layoutId="player-cover" transition={spring}><Artwork src={state.track?.artwork} loading="eager" /></motion.span>
+      <motion.span className="dock-art" layoutId="player-cover" transition={spring}><Artwork src={state.track?.artwork} preview={state.track?.artworkPreview} loading="eager" /></motion.span>
       <span className="min-w-0"><span className="dock-title"><strong>{state.track?.title ?? 'Nothing playing'}</strong>
         {format && <span className="format-badge" title={[format, state.track?.bits ? state.track.bits + '-bit' : '', trackRate(state.track)].filter(Boolean).join(' · ')}>
           {hiRes ? 'HI-RES · ' : ''}{format}</span>}</span><small>{state.track?.artist ?? 'Choose a song to begin'}</small></span>
@@ -252,7 +252,7 @@ export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueue
     </header>
     <div className="full-content">
       <div className="full-transport">
-        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Ambient layer={ambient} cover /><Artwork src={track?.artwork} loading="eager" /></motion.div>
+        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Ambient layer={ambient} cover /><Artwork src={track?.artwork} preview={track?.artworkPreview} loading="eager" /></motion.div>
         <div className="full-title"><h1>{track?.title ?? 'Nothing playing'}</h1><p>{track?.artist}</p></div>
         <Scrubber key={track?.id} player={player} notify={notify} />
         <Transport player={player} notify={notify} />
@@ -392,7 +392,7 @@ function Queue({ player, notify, close, panel }: {
     exit={{ x: '105%', opacity: 0 }} transition={spring}>
     <header><h2>Queue</h2><IconButton label="Close queue" action={close}><X size={20} /></IconButton></header>
     <div className="queue-scroll">
-      {track && <><h3>Now playing</h3><div className="queue-current"><Artwork src={track.artwork} /><span><strong>{track.title}</strong><small>{track.artist}</small></span></div></>}
+      {track && <><h3>Now playing</h3><div className="queue-current"><Artwork src={track.artwork} preview={track.artworkPreview} /><span><strong>{track.title}</strong><small>{track.artist}</small></span></div></>}
       <h3>{desktop ? 'Manually queued' : 'Up next'}</h3>
       <QueueTracks player={player} notify={notify} panel={panel} />
     </div>
@@ -413,7 +413,7 @@ function QueueTracks({ player, notify, panel }: { player: Player; notify: Notify
     const index = queueIndex + offset + 1
     return <div className="queue-row" key={track.id + ':' + index}>
       <button className="track-link" aria-label={'Play ' + track.title + ' from queue'} onClick={() => updateQueue('jump', index, track.id)}>
-        <Artwork src={track.artwork} />
+        <Artwork src={track.artwork} preview={track.artworkPreview} />
         <span><strong title={track.title}>{track.title}</strong><small>{track.artist}</small></span>
       </button>
       <time>{timeLabel(track.duration)}</time>

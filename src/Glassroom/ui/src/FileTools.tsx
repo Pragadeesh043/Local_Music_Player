@@ -36,7 +36,7 @@ function TrackFields({ player, id, update, track, busy }: {
   update: (operation: Promise<unknown>, result: string) => void
 }) {
   return <>
-    <div className="tool-track"><Artwork src={track.artwork} loading="eager" /><div><h3>{track.title}</h3><p>{track.artist} · {track.album}</p></div></div>
+    <div className="tool-track"><Artwork src={track.artwork} preview={track.artworkPreview} loading="eager" /><div><h3>{track.title}</h3><p>{track.artist} · {track.album}</p></div></div>
     <dl className="tool-details">
       <dt>File</dt><dd>{track.path}</dd><dt>Container</dt><dd>{track.format} · {track.fileSize.toLocaleString()} bytes</dd>
       <dt>Audio</dt><dd>{[track.codec, track.sourceRate.toLocaleString() + ' Hz', track.bits ? track.bits + ' bit' : '',

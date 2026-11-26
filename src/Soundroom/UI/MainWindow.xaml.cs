@@ -241,6 +241,7 @@ public sealed partial class MainWindow : Window
                         {
                             Rating = prior.Rating, PlayCount = prior.PlayCount, Analysis = prior.Analysis
                         });
+                        await WarmCoverAsync(item, refresh: true);
                         imported++;
                     }
                 }

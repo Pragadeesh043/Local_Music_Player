@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { Artwork } from './Artwork'
-import type { Album, Bridge, LibraryQuery, Playlist, Track } from './bridge'
+import type { Album, Bridge, LibraryQuery, Page, Playlist, Track } from './bridge'
 import { timeLabel, useResource } from './player'
 
 export type Route = 'Discover' | 'Browse' | 'Library' | 'Playlists'
@@ -12,9 +12,11 @@ export type Detail = { kind: 'album'; item: Album } | { kind: 'playlist'; item: 
 type Item = Album | Playlist | Track
 const pageSize = 60
 const discoverySize = 6
+const recentPages = new WeakMap<Bridge, Map<string, Page>>()
 
-export function CatalogView({ bridge, route, query, folder, detail, open, back, play, enqueue, inspect, recent }: {
+export function CatalogView({ bridge, revision, route, query, folder, detail, open, back, play, enqueue, inspect, recent }: {
   bridge: Bridge
+  revision: number
   route: Route
   query: string
   folder: string
@@ -29,23 +31,41 @@ export function CatalogView({ bridge, route, query, folder, detail, open, back, 
   const scroll = useRef<HTMLDivElement>(null)
   const requested = useRef(new Set<number>())
   const active = useRef(false)
-  const [pages, setPages] = useState(new Map<number, Item[]>())
-  const [total, setTotal] = useState<number | null>(null)
-  const [errors, setErrors] = useState(new Map<number, string>())
   const kind = detail || route === 'Library' ? 'tracks' : route === 'Playlists' ? 'playlists' : 'albums'
   const albumId = detail?.kind === 'album' ? detail.item.id : undefined
   const playlistId = detail?.kind === 'playlist' ? detail.item.id : undefined
-  const first = pages.get(0)?.[0]
   const discover = route === 'Discover' && !query && !detail
+  const argsFor = useCallback((offset: number): LibraryQuery => ({
+    kind, offset, limit: discover ? discoverySize : pageSize, ...(query && { query }), ...(albumId && { albumId }),
+    ...(playlistId && { playlistId }), ...(folder && { folder }),
+  }), [kind, query, folder, albumId, playlistId, discover])
+  const keyFor = useCallback((offset: number) => JSON.stringify([revision, argsFor(offset)]), [revision, argsFor])
+  let cached = recentPages.get(bridge)
+  if (!cached) recentPages.set(bridge, cached = new Map())
+  const pageCache = cached
+  const firstPage = pageCache.get(keyFor(0))
+  const [pages, setPages] = useState(() => new Map<number, Item[]>(firstPage ? [[0, firstPage.items]] : []))
+  const [total, setTotal] = useState<number | null>(() => firstPage?.total ?? null)
+  const [errors, setErrors] = useState(new Map<number, string>())
+  const first = pages.get(0)?.[0]
   const albums = discover ? (pages.get(0) ?? []).filter(item => 'firstTrackId' in item) : []
   const failure = errors.entries().next().value
 
   const load = useCallback((offset: number) => {
     if (requested.current.has(offset)) return
     requested.current.add(offset)
-    const args: LibraryQuery = { kind, offset, limit: discover ? discoverySize : pageSize, ...(query && { query }), ...(albumId && { albumId }),
-      ...(playlistId && { playlistId }), ...(folder && { folder }) }
-    void bridge.request('library', args).then(result => {
+    const key = keyFor(offset)
+    const cached = pageCache.get(key)
+    if (cached) {
+      pageCache.delete(key)
+      pageCache.set(key, cached)
+      setPages(previous => new Map(previous).set(offset, cached.items))
+      setTotal(cached.total)
+    }
+    void bridge.request('library', argsFor(offset)).then(result => {
+      pageCache.delete(key)
+      pageCache.set(key, result)
+      if (pageCache.size > 64) pageCache.delete(pageCache.keys().next().value!)
       if (!active.current) return
       setPages(previous => new Map(previous).set(offset, result.items))
       setTotal(result.total)
@@ -53,7 +73,7 @@ export function CatalogView({ bridge, route, query, folder, detail, open, back, 
       if (!active.current) return
       setErrors(previous => new Map(previous).set(offset, error.message))
     })
-  }, [bridge, kind, query, folder, albumId, playlistId, discover])
+  }, [bridge, argsFor, keyFor, pageCache])
 
   useEffect(() => {
     active.current = true
@@ -76,7 +96,7 @@ export function CatalogView({ bridge, route, query, folder, detail, open, back, 
       {detail ? <header className="detail-header">
         <button className="back-link" onClick={back}><ArrowLeft size={16} /> Back to {route}</button>
         <div className="detail-identity">
-          {detail.kind === 'album' ? <Artwork src={detail.item.artwork} loading="eager" /> : <span className="playlist-art"><ListMusic /></span>}
+          {detail.kind === 'album' ? <Artwork src={detail.item.artwork} preview={detail.item.artworkPreview} loading="eager" /> : <span className="playlist-art"><ListMusic /></span>}
           <div><h1>{detail.item.title}</h1>
             <p>{detail.kind === 'album' ? [detail.item.artist, detail.item.year].filter(Boolean).join(' · ') : detail.item.description}</p>
             {detail.kind === 'album' && detail.item.edition && <p className="album-edition-detail">{detail.item.edition}</p>}
@@ -179,7 +199,7 @@ function FeaturedCarousel({ albums, track, recent, open, play }: {
         <motion.article className="hero" key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .23 }}
           aria-label={`${current + 1} of ${count}`} aria-roledescription="slide">
-          <Artwork src={item.artwork} className="hero-image" loading="eager" />
+          <Artwork src={item.artwork} preview={item.artworkPreview} className="hero-image" loading="eager" />
           <div className="hero-copy">
             <span className="hero-label">{label}</span>
             <h2 title={item.title}>{item.title}</h2>
@@ -286,7 +306,7 @@ function VirtualCatalog({ pages, total, load, kind, scroll, open, play, enqueue,
 
 function AlbumCard({ item, open }: { item: Album; open: () => void }) {
   return <motion.button className="album-card" onClick={open} whileTap={{ scale: 0.97 }}>
-    <Artwork src={item.artwork} />
+    <Artwork src={item.artwork} preview={item.artworkPreview} />
     <strong>{item.title}</strong><span>{item.artist}</span>
     {item.edition && <span className="album-edition" title={item.edition}>{item.edition}</span>}
   </motion.button>
@@ -304,7 +324,7 @@ function TrackRow({ item, play, enqueue, inspect }: {
 }) {
   return <div className={'track-row' + (inspect ? ' with-inspector' : '')}>
     <button className="track-link" onClick={() => play(item.id)} aria-label={'Play ' + item.title}>
-      <Artwork src={item.artwork} />
+      <Artwork src={item.artwork} preview={item.artworkPreview} />
       <span className="min-w-0"><strong>{item.title}</strong><small>{item.artist}</small></span>
     </button>
     <span className="track-album">{item.album}</span>

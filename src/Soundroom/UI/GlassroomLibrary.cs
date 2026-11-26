@@ -15,7 +15,7 @@ public sealed partial class MainWindow
     private Track[] webQueued = [];
 
     private sealed record WebAlbum(string Id, string Title, string Artist, int Year, string Genre, string Edition,
-        string Artwork, string FirstTrackId);
+        string? Artwork, string FirstTrackId, string? ArtworkPreview);
     private sealed record WebPlaylist(string Id, string Title, string Description);
     private sealed record WebLyric(double At, string Text);
     private static readonly WebPlaylist[] SmartPlaylists =
@@ -46,12 +46,14 @@ public sealed partial class MainWindow
             if (kind == "albums")
             {
                 var page = library.AlbumPage(query, offset, limit);
-                return new { items = page.Tracks.Select(ToWebAlbum).ToArray(), page.Total };
+                var covers = thumbnails.ReadCovers(page.Tracks.Select(item => item.Key));
+                return new { items = page.Tracks.Select(item => ToWebAlbum(item, covers.GetValueOrDefault(item.Key))).ToArray(), page.Total };
             }
             if (kind != "tracks")
                 throw new InvalidOperationException("Unknown library view.");
             var tracks = library.Page(query, offset, limit);
-            return new { items = tracks.Tracks.Select(ToWebTrack).ToArray(), tracks.Total };
+            var trackCovers = thumbnails.ReadCovers(tracks.Tracks.Select(item => item.Key));
+            return new { items = tracks.Tracks.Select(item => ToWebTrack(item, trackCovers.GetValueOrDefault(item.Key))).ToArray(), tracks.Total };
         }, libraryLifetime.Token);
     }
 
@@ -103,9 +105,6 @@ public sealed partial class MainWindow
         return item;
     }
 
-    private WebTrack[] WebQueue() =>
-        (track is null ? webQueued : new[] { track }.Concat(webQueued)).Select(ToWebTrack).ToArray();
-
     private async Task EditGlassroomQueue(string method, JsonElement args)
     {
         string key = WebText(args, "id");
@@ -152,19 +151,22 @@ public sealed partial class MainWindow
 
     private static string AlbumId(Track item) => EncodeWebKey(JsonSerializer.Serialize(new[] { item.AlbumGroup, item.Edition }));
     private static string WebArtwork(Track item) => CoverOrigin + EncodeWebKey(item.Key);
+    private static string? WebArtwork(Track item, StoredCover? stored) => stored is null
+        ? WebArtwork(item) : stored.Asset is { } asset ? CoverOrigin + "asset/" + asset
+        : stored.Preview is not null ? WebArtwork(item) : null;
 
-    private static WebTrack ToWebTrack(Track item) =>
-        new(item.Key, item.Title, item.Artist, AlbumId(item), item.Album, WebArtwork(item), item.Duration,
+    private static WebTrack ToWebTrack(Track item, StoredCover? cover) =>
+        new(item.Key, item.Title, item.Artist, AlbumId(item), item.Album, WebArtwork(item, cover), item.Duration,
             int.TryParse(item.Tag("track", "tracknumber").Split('/')[0], out int number) ? number : 0,
-            item.Codec, item.Rate, item.Bits, item.Channels, item.BitRate);
+            item.Codec, item.Rate, item.Bits, item.Channels, item.BitRate, cover?.Preview);
 
-    private static WebAlbum ToWebAlbum(Track item)
+    private static WebAlbum ToWebAlbum(Track item, StoredCover? cover)
     {
         string artist = item.Tag("albumartist", "album_artist");
         var date = item.Tag("date", "year", "originaldate");
         return new(AlbumId(item), item.Album, artist.Length > 0 ? artist : item.Artist,
             date.Length >= 4 && int.TryParse(date.AsSpan(0, 4), out int year) ? year : 0,
-            item.Tag("genre"), item.Edition, WebArtwork(item), item.Key);
+            item.Tag("genre"), item.Edition, WebArtwork(item, cover), item.Key, cover?.Preview);
     }
 
     private void ConfigureWebArtwork(CoreWebView2 core)
@@ -180,10 +182,12 @@ public sealed partial class MainWindow
             var deferral = args.GetDeferral();
             const string cors = "Access-Control-Allow-Origin: https://mp4a.glassroom.test\r\n";
             bool coverRequest = uri.StartsWith(CoverOrigin, StringComparison.Ordinal);
+            bool assetRequest = uri.StartsWith(CoverOrigin + "asset/", StringComparison.Ordinal);
             try
             {
                 IRandomAccessStream? stream = null;
                 string type = "image/png";
+                string? preview = null;
                 if (uri.Length <= 24_000 && args.Request.Method == "GET" && catalogReady)
                 {
                     string path = uri[MediaOrigin.Length..];
@@ -191,19 +195,33 @@ public sealed partial class MainWindow
                         (stream, type) = await ServeBooklet(path);
                     else
                     {
-                        string key = DecodeWebKey(coverRequest ? uri[CoverOrigin.Length..] : path);
-                        var item = await Task.Run(() => library.FindTrack(key), libraryLifetime.Token);
-                        if (item is { Missing: false })
+                        byte[] bytes = [];
+                        if (assetRequest)
                         {
-                            var mounted = WithMountedPath(item);
-                            var bytes = await Task.Run(() => ReadCoverBytesAsync(mounted, libraryLifetime.Token), libraryLifetime.Token);
-                            type = ArtworkCache.IsWebP(bytes) ? "image/webp" : "image/png";
-                            stream = await ImageStream(bytes);
+                            string asset = uri[(CoverOrigin.Length + "asset/".Length)..];
+                            if (asset.Length == 64 && asset.All(Uri.IsHexDigit))
+                                bytes = await Task.Run(() => thumbnails.ReadCoverAsset(asset), libraryLifetime.Token);
                         }
+                        else
+                        {
+                            string key = DecodeWebKey(coverRequest ? uri[CoverOrigin.Length..] : path);
+                            var item = await Task.Run(() => library.FindTrack(key), libraryLifetime.Token);
+                            if (item is { Missing: false })
+                            {
+                                var prepared = await PrepareCoverAsync(WithMountedPath(item));
+                                bytes = prepared.Bytes;
+                                preview = prepared.Cover?.Preview;
+                            }
+                        }
+                        type = ArtworkCache.IsWebP(bytes) ? "image/webp" : "image/png";
+                        stream = await ImageStream(bytes);
                     }
                 }
                 string headers = cors +
-                    (stream is null ? "Cache-Control: no-store" : $"Content-Type: {type}\r\nCache-Control: max-age=60");
+                    (stream is null ? "Cache-Control: no-store" : $"Content-Type: {type}\r\nCache-Control: " +
+                        (assetRequest ? "max-age=31536000, immutable" : "no-store"));
+                if (!string.IsNullOrEmpty(preview))
+                    headers += $"\r\nAccess-Control-Expose-Headers: X-Artwork-Preview\r\nX-Artwork-Preview: {preview}";
                 args.Response = stream is not null
                     ? sender.Environment.CreateWebResourceResponse(stream, 200, "OK", headers)
                     : sender.Environment.CreateWebResourceResponse(null, coverRequest ? 204 : 404,
