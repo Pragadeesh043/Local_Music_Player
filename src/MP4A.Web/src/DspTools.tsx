@@ -6,6 +6,12 @@ import { Player, useResource } from './player'
 
 const shapes = ['Peak', 'Low shelf', 'High shelf', 'Low pass', 'High pass', 'Notch', 'Band pass', 'All pass']
 const centers = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+const curves = {
+  V: [4, 3, 2, 0, -2, -3, -2, 0, 2, 4],
+  M: [-2, 0, 3, 2, 0, -2, 0, 3, 2, -2],
+  W: [4, 3, 0, -2, 0, 3, 0, -2, 2, 4],
+  U: [3, 3, 2, 0, -1, -1, -1, 0, 2, 3],
+}
 const levels = [
   ['Preamp (dB)', 'preamp', -24, 6, .5], ['Bass shelf (dB)', 'bass', -12, 12, .5],
   ['Stereo width (%)', 'width', 0, 200, 1], ['Crossfeed (%)', 'crossfeed', 0, 100, 1],
@@ -30,6 +36,8 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const modified = JSON.stringify(draft) !== JSON.stringify(view.settings)
+  const selectedCurve = Object.entries(curves).find(([, gains]) =>
+    gains.every((gain, index) => gain === draft.graphic[index]))?.[0] ?? ''
 
   function update<K extends keyof Dsp>(key: K, value: Dsp[K]) {
     setDraft(current => ({ ...current, [key]: value }))
@@ -52,12 +60,21 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
         name: action === 'load' ? preset : name })
       setView(result)
       setDraft(result.settings)
-      if (action === 'apply') setMessage('DSP settings applied.')
+      if (action === 'apply') setMessage(result.bypassed
+        ? 'DSP settings applied. The current output route bypasses DSP.'
+        : 'DSP settings applied.')
       if (action === 'save') setMessage('DSP preset saved.')
     })().catch(error => setMessage(error.message)).finally(() => setBusy(false))
   }
 
-  return <form className="tool-form" onSubmit={event => { event.preventDefault(); run('apply') }}>
+  return <form className="tool-form" onSubmit={event => {
+    event.preventDefault()
+    if (modified && !busy) run('apply')
+  }} onInvalid={event => {
+    event.preventDefault()
+    const input = event.target as HTMLInputElement
+    setMessage(`${input.getAttribute('aria-label')}: ${input.validationMessage}`)
+  }}>
     <Plot label="Left and right EQ response" points={[
       { values: view.right.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72), secondary: true },
       { values: view.left.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72) },
@@ -85,9 +102,9 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
               {shapes.map((shape, index) => <option value={index} key={shape}>{shape}</option>)}</select></label>
             <label>Channel<select value={band.channel} onChange={event => editBand(i, { channel: Number(event.target.value) })}>
               {['Both', 'Left', 'Right'].map((channel, index) => <option value={index} key={channel}>{channel}</option>)}</select></label>
-            {([['Hz', 'frequency', 20, 22000, 1], ['dB', 'gain', -30, 24, .1], ['Q', 'q', .05, 30, .01]] as const)
-              .map(([label, key, min, max, step]) => <label key={key}>{label}<input aria-label={'Band ' + (i + 1) + ' ' + label}
-                type="number" min={min} max={max} step={step} value={band[key]} onChange={event => editBand(i, { [key]: Number(event.target.value) })} /></label>)}
+            {([['Hz', 'frequency', 20, 22000], ['dB', 'gain', -30, 24], ['Q', 'q', .05, 30]] as const)
+              .map(([label, key, min, max]) => <label key={key}>{label}<input aria-label={'Band ' + (i + 1) + ' ' + label}
+                type="number" min={min} max={max} step="any" value={band[key]} onChange={event => editBand(i, { [key]: Number(event.target.value) })} /></label>)}
             <button type="button" className="icon-button" aria-label={'Remove band ' + (i + 1)}
               onClick={() => update('parametric', draft.parametric.filter((_, index) => index !== i))}><Trash2 size={16} /></button>
           </div>)}
@@ -100,6 +117,14 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
         </div>
       </details>
       <details><summary>10-band graphic EQ</summary><div className="tool-fields tool-section">
+        <label>Curve preset<select value={draft.enabled ? selectedCurve : ''} onChange={event => {
+          const curve = event.target.value as keyof typeof curves
+          setDraft(current => ({ ...current, enabled: true, graphic: [...curves[curve]] }))
+          setMessage('')
+        }}>
+          <option value="" disabled>Choose a curve</option>
+          {Object.keys(curves).map(curve => <option key={curve}>{curve}</option>)}
+        </select></label>
         {centers.map((frequency, i) => <label key={frequency}>{frequency} Hz · {draft.graphic[i].toFixed(1)} dB
           <input type="range" min={-12} max={12} step={.5} value={draft.graphic[i]} onChange={event =>
             update('graphic', draft.graphic.map((value, index) => i === index ? Number(event.target.value) : value))} /></label>)}

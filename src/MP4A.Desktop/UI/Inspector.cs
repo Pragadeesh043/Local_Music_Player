@@ -14,7 +14,8 @@ public sealed partial class MainWindow
                 dsp.Enabled ? dsp.Preamp + filters.Sum(filter => filter.Response(20 * Math.Pow(1000, index / 119.0), rate)) : 0).ToArray();
         }
         return new { settings = dsp with { ImpulsePath = null }, impulse = Path.GetFileName(dsp.ImpulsePath),
-            presets = library.Presets().Keys.Order().ToArray(), left = Response(EqChannel.Left), right = Response(EqChannel.Right) };
+            presets = library.Presets().Keys.Order().ToArray(), left = Response(EqChannel.Left), right = Response(EqChannel.Right),
+            bypassed = playback is { IsProcessed: false } };
     }
 
     private async Task<object> EditDsp(JsonElement args)

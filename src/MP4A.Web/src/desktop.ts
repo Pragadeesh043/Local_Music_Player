@@ -32,7 +32,7 @@ export type Dsp = {
   invert: boolean; dither: number; normalization: number; headroom: number; limiter: boolean
   parametric: EqBand[]; graphic: number[]
 }
-export type DspView = { settings: Dsp; impulse: string | null; presets: string[]; left: number[]; right: number[] }
+export type DspView = { settings: Dsp; impulse: string | null; presets: string[]; left: number[]; right: number[]; bypassed: boolean }
 export type DspAction = 'apply' | 'reset' | 'load' | 'save' | 'autoeq' | 'impulse' | 'clearImpulse'
 export type Meter = { peak: number; rms: number; clips: number }
 export type LiveSignal = {
