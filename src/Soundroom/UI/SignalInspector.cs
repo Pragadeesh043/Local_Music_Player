@@ -37,7 +37,8 @@ public sealed partial class MainWindow
 
     private void PublishLiveSignal(Playback session)
     {
-        if (!liveSignal || !presentationVisible || session.Latest is not { } signal || ReferenceEquals(signal, lastSignal))
+        if (!liveSignal || !presentationVisible || session.State != PlaybackState.Playing ||
+            session.Latest is not { } signal || ReferenceEquals(signal, lastSignal))
             return;
         lastSignal = signal;
         PostGlassroom(new { v = 1, @event = "signal", data = SignalData(session, signal) });

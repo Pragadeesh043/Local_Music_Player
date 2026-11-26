@@ -25,7 +25,7 @@ Now Playing and the library share thumbnails from embedded covers or folder artw
   The HRTF response continues across compatible gapless tracks and finishes when the playback stream ends.
 - **Stereo downmix** folds the source to two channels and applies the headphone DSP chain.
 - **7.1 device / HeSuVi** sends mapped channels to an eight-channel Windows endpoint. It leaves spatial processing and volume to the external chain.
-- **Exclusive · direct PCM** negotiates a WASAPI format at the track’s rate and preserves the decoded integer samples. It rejects devices that lack a compatible format. The inspector shows the valid bits and any wider transport container.
+- **Exclusive · direct PCM** negotiates a WASAPI format at the track’s rate and preserves the decoded integer samples during playback. Pause and resume apply 6 ms boundary fades. It rejects devices that lack a compatible format. The inspector shows the valid bits and any wider transport container.
 - **Exclusive · DSP / resampling** applies processing in double precision, uses the requested PCM rate and precision, then quantizes to the negotiated output format.
 - **Exclusive · DSD over PCM** sends native DSF or uncompressed DSDIFF payloads in a DoP carrier. Enable the DoP capability for the selected DAC in **Output settings**.
 - **ASIO · native DSD** opens the selected ASIO driver in one-bit DSD mode. It requires a 64-bit driver with native packed DSD buffers, the source’s clock rate, and sufficient output channels.

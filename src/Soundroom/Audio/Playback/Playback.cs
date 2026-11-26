@@ -46,8 +46,11 @@ internal sealed class Playback : IWaveProvider, IDisposable
     private ProcessingControls controls;
     private ProcessingSnapshot? producedProcessing, deliveredProcessing;
     private Signal? signal;
+    private Signal? pcmPacketSignal;
+    private ProcessingSnapshot? pcmPacketProcessing;
     private bool disposed;
     private long framesRead;
+    private long framesPrepared;
     private long binauralSourceFrames;
     private long mediaEndFrame = long.MaxValue;
     private int binauralTailRemaining = -1;
@@ -208,6 +211,14 @@ internal sealed class Playback : IWaveProvider, IDisposable
             StartProducer();
             return;
         }
+        if (!dop)
+        {
+            output = new PcmWasapiOut(device.Id, exclusive, OutputBits);
+            output.PlaybackStopped += OutputStopped;
+            output.Init(this);
+            StartProducer();
+            return;
+        }
         using var enumerator = new MMDeviceEnumerator();
         using var endpoint = enumerator.GetDevice(device.Id);
         var mode = exclusive ? AudioClientShareMode.Exclusive : AudioClientShareMode.Shared;
@@ -239,6 +250,11 @@ internal sealed class Playback : IWaveProvider, IDisposable
 
     public Task WaitUntilBufferedAsync(CancellationToken cancellation) => primed.Task.WaitAsync(cancellation);
 
+    // The unread decoder ring is the continuation of the stream. The endpoint's rendered
+    // packets are drained and reset independently, so resume does not seek or skip media.
+    internal bool CanPrimePcm(int frames) => Volatile.Read(ref completed) != 0 ||
+        Interlocked.Read(ref framesPrepared) - Interlocked.Read(ref framesRead) >= frames;
+
     public void Play()
     {
         if (output is null)
@@ -246,7 +262,21 @@ internal sealed class Playback : IWaveProvider, IDisposable
         primed.Task.GetAwaiter().GetResult();
         output.Play();
     }
-    public void Pause() => output?.Pause();
+    public Task ResumeAsync()
+    {
+        if (output is PcmWasapiOut pcm)
+            return pcm.PlayAsync();
+        output?.Play();
+        return Task.CompletedTask;
+    }
+
+    public Task PauseAsync()
+    {
+        if (output is PcmWasapiOut pcm)
+            return pcm.PauseAsync();
+        output?.Pause();
+        return Task.CompletedTask;
+    }
     public void Update(DspSettings updated, float newVolume)
     {
         var previous = Volatile.Read(ref controls);
@@ -265,6 +295,12 @@ internal sealed class Playback : IWaveProvider, IDisposable
     }
     public void Inspect(int channel) => Volatile.Write(ref waveChannel, Math.Clamp(channel, 0, SourceChannels.Length - 1));
     public void SetAnalysisEnabled(bool enabled) => Volatile.Write(ref analysisEnabled, enabled ? 1 : 0);
+
+    internal void ConfirmPcmPacket()
+    {
+        Volatile.Write(ref signal, pcmPacketSignal);
+        Volatile.Write(ref deliveredProcessing, pcmPacketProcessing);
+    }
 
     public int Read(byte[] buffer, int offset, int count)
     {
@@ -320,6 +356,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 block.Signal = producedSignal;
                 block.Processing = producedProcessing;
                 queue.Publish();
+                Interlocked.Add(ref framesPrepared, block.Length / WaveFormat.BlockAlign);
                 if (queue.Queued >= startupBlocks)
                     primed.TrySetResult();
             }
@@ -347,6 +384,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
     {
         if (Volatile.Read(ref stopping) != 0 || Volatile.Read(ref endedForOrder) != 0 || (IsRaw && Underruns != 0))
             return 0;
+        bool pcm = output is PcmWasapiOut;
         int written = 0;
         while (written < count)
         {
@@ -387,8 +425,16 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 Volatile.Write(ref consumedTrack, transition.Track);
                 consumedTransitions.Enqueue(transition.Track);
             }
-            Volatile.Write(ref signal, block.Signal);
-            Volatile.Write(ref deliveredProcessing, block.Processing);
+            if (pcm)
+            {
+                pcmPacketSignal = block.Signal;
+                pcmPacketProcessing = block.Processing;
+            }
+            else
+            {
+                Volatile.Write(ref signal, block.Signal);
+                Volatile.Write(ref deliveredProcessing, block.Processing);
+            }
             if (bufferedPosition == block.Length)
             {
                 bufferedPosition = transitionIndex = 0;

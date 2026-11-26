@@ -107,7 +107,7 @@ internal sealed record SignalPathReport(string Verdict, bool ExactAtOutput, stri
         bool unchanged = directPcm || payload;
         return new(directPcm ? "Bit-perfect PCM to the driver" : payload ? "DSD payload preserved to the driver" :
             mode == Route.Cable ? "Shared output to external processing" : "Processed playback", unchanged,
-            directPcm ? "Decoded PCM samples are sent at their source rate and precision. A wider transport word can carry the same samples."
+            directPcm ? "Decoded PCM samples are sent at their source rate and precision. Pause and resume apply short boundary fades to prevent clicks."
             : payload ? "The one-bit stream bypasses DSP. This describes the payload delivered by Soundroom."
             : exclusive ? "Exclusive access bypasses the Windows mixer. This route converts samples through the DSP and output quantizer."
             : "This route uses the Windows shared mixer. Sample preservation through the endpoint is unverified.",

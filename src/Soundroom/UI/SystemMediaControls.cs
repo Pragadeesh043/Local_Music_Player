@@ -58,7 +58,7 @@ public sealed partial class MainWindow
                 switch (button)
                 {
                     case SystemMediaTransportControlsButton.Play: await ResumePlaybackAsync(); break;
-                    case SystemMediaTransportControlsButton.Pause: PausePlayback(); break;
+                    case SystemMediaTransportControlsButton.Pause: await PausePlaybackAsync(); break;
                     case SystemMediaTransportControlsButton.Next: await MoveAsync(1); break;
                     case SystemMediaTransportControlsButton.Previous: await MoveAsync(-1); break;
                 }

@@ -128,11 +128,10 @@ public sealed partial class MainWindow : Window
         return StartAsync(Math.Clamp(seconds, 0, current.Duration), playbackRequested, countPlay: false);
     }
 
-    private void PausePlayback()
+    private Task PausePlaybackAsync()
     {
         playbackRequested = false;
-        if (playback?.State == PlaybackState.Playing)
-            playback.Pause();
+        return playback?.PauseAsync() ?? Task.CompletedTask;
     }
 
     private async Task ResumePlaybackAsync()
@@ -153,10 +152,11 @@ public sealed partial class MainWindow : Window
         try
         {
             await session.WaitUntilBufferedAsync(libraryLifetime.Token);
-            if (!ready || !playbackRequested || !ReferenceEquals(playback, session) || session.State == PlaybackState.Playing)
+            if (!ready || !playbackRequested || !ReferenceEquals(playback, session))
                 return;
-            session.Play();
-            RememberPlayed(session.CurrentTrack.Key);
+            await session.ResumeAsync();
+            if (ready && playbackRequested && ReferenceEquals(playback, session) && session.State == PlaybackState.Playing)
+                RememberPlayed(session.CurrentTrack.Key);
         }
         catch (Exception error)
         {

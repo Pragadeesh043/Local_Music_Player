@@ -198,7 +198,7 @@ public sealed partial class MainWindow
                 await PlayFromGlassroom(args);
                 break;
             case "pause":
-                PausePlayback();
+                await PausePlaybackAsync();
                 break;
             case "seek":
                 await SeekAsync(WebText(args, "id"), args.GetProperty("position").GetDouble());
