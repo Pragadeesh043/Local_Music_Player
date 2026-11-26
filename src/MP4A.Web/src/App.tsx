@@ -143,6 +143,7 @@ export function App({ player }: { player: Player }) {
                 }}>{item.title}</button>)}
             </nav>}
             {desktop && <nav className="desktop-nav" aria-label="Desktop tools">
+              {desktop.mediaToolsAvailable === false && <button className="nav-item" title="Set up FFmpeg" onClick={() => desktopAction('setupFFmpeg')}><FolderOpen size={19} /><span>Set up FFmpeg</span></button>}
               <button className="nav-item" title="Add files" onClick={() => desktopAction('addFiles')}><FilePlus2 size={19} /><span>Add files</span></button>
               <button className="nav-item" title="Watch folder" onClick={() => desktopAction('watchFolder')}><FolderOpen size={19} /><span>Watch folder</span></button>
               <button className="nav-item" title="Reindex library" onClick={() => desktopAction('reindex')}><RefreshCw size={19} /><span>Reindex library</span></button>

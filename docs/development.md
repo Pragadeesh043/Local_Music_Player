@@ -25,7 +25,7 @@ Install the .NET 10 SDK and Node.js 22.12+ or a supported newer version. Install
 
 The development build lands in `artifacts\Release`. The installer lands at `artifacts\MP4A-Setup-x64.exe`. Use `-Configuration Debug` on `build.ps1` for a debug build or `-NoRestore` when dependencies are already restored. The scripts can use local SDK and NSIS installations under `.dotnet` and `.tools\nsis`.
 
-Put development copies of FFmpeg and ffprobe in `.tools\ffmpeg` and optionally put sacd_extract in `.tools\sacd`. The installer leaves these downloads to the user. See the [setup guide](../README.md).
+Place both Windows x64 FFmpeg executables in `.tools\ffmpeg`, or set the `FFmpegDirectory` MSBuild property to their folder. The desktop project includes the pair, adjacent DLLs, and upstream license files in its build and publish outputs under `Tools\FFmpeg`. Installer builds require both executables. Use the same desktop publish payload when assembling a full-trust MSIX package. Optionally put sacd_extract in `.tools\sacd` for development. See the [setup guide](../README.md) and [release checklist](release.md).
 
 For UI work, run `npm.cmd ci` and `npm.cmd run dev` from `src/MP4A.Web`. The browser demo uses the bundled fixtures and synthesized audio. See the [C++ example](../examples/native-host/README.md) for a second way to exercise the bridge.
 

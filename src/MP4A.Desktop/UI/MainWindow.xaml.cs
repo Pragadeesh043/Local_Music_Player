@@ -1,5 +1,6 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using NAudio.Wave;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -20,12 +21,15 @@ public sealed partial class MainWindow : Window
     private double resumePosition;
     private string status = "";
     private bool ready, importing, choosingMusic, presentationVisible = true;
+    private bool mediaToolsAvailable, choosingFFmpeg;
     private DspSettings dsp = DspSettings.Flat();
 
     public MainWindow()
     {
         thumbnails = new(Path.Combine(Diagnostics.DataDirectory, "ArtworkThumbnails"), lifetime: libraryLifetime.Token);
         InitializeComponent();
+        Media.FFmpegFolder = library.Get<string>("ffmpeg-folder");
+        mediaToolsAvailable = Media.HasFFmpeg;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "MP4A.ico"));
         ApplyGlassroomTheme(dark: true);
         var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
@@ -103,6 +107,48 @@ public sealed partial class MainWindow : Window
         catch (Exception error) { ShowError(operation, error); }
     }
 
+    private async Task<bool> EnsureFFmpegAsync()
+    {
+        mediaToolsAvailable = Media.HasFFmpeg;
+        if (mediaToolsAvailable || !ready || choosingFFmpeg || WindowSurface.XamlRoot is null)
+            return mediaToolsAvailable;
+
+        choosingFFmpeg = true;
+        try
+        {
+            var prompt = new ContentDialog
+            {
+                XamlRoot = WindowSurface.XamlRoot,
+                Title = "Set up FFmpeg",
+                Content = "Choose an existing FFmpeg bin folder containing ffmpeg.exe and ffprobe.exe. " +
+                    "You can also install both tools in " + Media.UserFFmpegFolder + ".",
+                PrimaryButtonText = "Choose folder",
+                CloseButtonText = "Cancel"
+            };
+            if (await prompt.ShowAsync() != ContentDialogResult.Primary)
+                return false;
+
+            var picker = new FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            if (await picker.PickSingleFolderAsync() is not { } folder || !ready)
+                return false;
+            if (!File.Exists(Path.Combine(folder.Path, "ffmpeg.exe")) || !File.Exists(Path.Combine(folder.Path, "ffprobe.exe")))
+            {
+                status = "The selected folder must contain both ffmpeg.exe and ffprobe.exe. Choose the FFmpeg bin folder.";
+                return false;
+            }
+
+            library.Put("ffmpeg-folder", folder.Path);
+            Media.FFmpegFolder = folder.Path;
+            mediaToolsAvailable = true;
+            status = "";
+            _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
+            return true;
+        }
+        finally { choosingFFmpeg = false; }
+    }
+
     private void SwitchFullscreen() => AppWindow.SetPresenter(AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen
         ? AppWindowPresenterKind.Default : AppWindowPresenterKind.FullScreen);
 
@@ -175,6 +221,8 @@ public sealed partial class MainWindow : Window
         choosingMusic = true;
         try
         {
+            if (!await EnsureFFmpegAsync())
+                return;
             var picker = new FileOpenPicker();
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
             foreach (string extension in Media.Extensions)
@@ -198,6 +246,8 @@ public sealed partial class MainWindow : Window
         choosingMusic = true;
         try
         {
+            if (!await EnsureFFmpegAsync())
+                return;
             var picker = new FolderPicker();
             picker.FileTypeFilter.Add("*");
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));

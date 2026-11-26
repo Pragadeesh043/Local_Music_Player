@@ -80,6 +80,8 @@ public sealed partial class MainWindow
 
     private async Task PlayFromGlassroom(JsonElement args)
     {
+        if (!await EnsureFFmpegAsync())
+            return;
         string key = WebText(args, "id");
         if (key.Length == 0)
         {

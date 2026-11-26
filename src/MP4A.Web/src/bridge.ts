@@ -33,7 +33,7 @@ export type Album = {
 
 export type Playlist = { id: string; title: string; description: string }
 export type Lyric = { at: number; text: string }
-export type DesktopAction = 'addFiles' | 'watchFolder' | 'reindex' | 'fullscreen' | 'shuffle'
+export type DesktopAction = 'addFiles' | 'watchFolder' | 'reindex' | 'fullscreen' | 'shuffle' | 'setupFFmpeg'
 export type Playback = {
   track: Track | null
   playing: boolean
@@ -43,7 +43,7 @@ export type Playback = {
   queueIndex: number
   liveSignal?: boolean
   desktop?: { status: string; volumeEnabled: boolean; catalogRevision: number; output: string; shuffled: boolean; fullscreen?: boolean
-    signalPath?: { mode: string; dsp: boolean } | null }
+    signalPath?: { mode: string; dsp: boolean } | null; mediaToolsAvailable?: boolean }
 }
 
 export type LibraryQuery = {

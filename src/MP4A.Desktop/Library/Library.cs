@@ -50,14 +50,35 @@ internal static class Media
     internal static readonly string[] Extensions = [".mp3", ".flac", ".wav", ".m4a", ".aif", ".aiff",
         ".aifc", ".wv", ".ape", ".tak", ".opus", ".ogg", ".oga", ".aac", ".alac", ".mpc", ".dsf", ".dff", ".cue", ".iso"];
 
+    public static string? FFmpegFolder { get; set; }
+    public static string UserFFmpegFolder { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MP4A", "Tools", "FFmpeg");
+
+    public static bool HasFFmpeg => ResolveFFmpeg("ffmpeg.exe") is not null && ResolveFFmpeg("ffprobe.exe") is not null;
+
+    private static string? ResolveFFmpeg(string executable)
+    {
+        var locations = new[] { Path.Combine(AppContext.BaseDirectory, "Tools", "FFmpeg"), FFmpegFolder, UserFFmpegFolder };
+        foreach (string? entry in locations.Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)))
+        {
+            string? directory = entry?.Trim().Trim('"');
+            if (string.IsNullOrEmpty(directory) || !Path.IsPathFullyQualified(directory))
+                continue;
+            string candidate = Path.Combine(directory, executable);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+        return null;
+    }
+
+    public const string FFmpegSetupMessage =
+        "MP4A needs ffmpeg.exe and ffprobe.exe to read and play music. Choose the folder containing both files and try again.";
+
     public static Process Start(string tool, params string[] arguments)
     {
-        if (tool is "ffmpeg" or "ffprobe")
-        {
-            string local = Path.Combine(AppContext.BaseDirectory, "Tools", "FFmpeg", tool + ".exe");
-            if (File.Exists(local))
-                tool = local;
-        }
+        bool usesFFmpeg = tool is "ffmpeg" or "ffprobe";
+        if (usesFFmpeg)
+            tool = ResolveFFmpeg(tool + ".exe") ?? throw new IOException(FFmpegSetupMessage);
         var info = new ProcessStartInfo(tool)
         {
             UseShellExecute = false, CreateNoWindow = true,
@@ -66,10 +87,9 @@ internal static class Media
         foreach (var arg in arguments)
             info.ArgumentList.Add(arg);
         try { return Process.Start(info) ?? throw new IOException($"Could not start {tool}."); }
-        catch (Win32Exception error) when (error.NativeErrorCode == 2)
+        catch (Win32Exception error) when (usesFFmpeg && error.NativeErrorCode is 2 or 3)
         {
-            string name = System.IO.Path.GetFileName(tool);
-            throw new IOException($"Could not find {name}. Install FFmpeg and put ffmpeg.exe and ffprobe.exe in MP4A's Tools\\FFmpeg folder or on PATH.", error);
+            throw new IOException(FFmpegSetupMessage, error);
         }
     }
 

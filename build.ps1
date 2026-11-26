@@ -35,17 +35,24 @@ if ($Installer) {
     $buildFolder = Join-Path $PSScriptRoot ('.verify\installer-' + [guid]::NewGuid().ToString('N'))
     $payload = Join-Path $buildFolder 'payload'
     $setup = Join-Path $PSScriptRoot 'artifacts\MP4A-Setup-x64.exe'
-    $buildOptions = @('-r', 'win-x64', '--self-contained', 'true', '-p:DebugType=embedded')
+    $buildOptions = @('-r', 'win-x64', '--self-contained', 'true', '-p:DebugType=embedded', '-p:RequireFFmpeg=true')
     if ($NoRestore) { $buildOptions += '--no-restore' }
     try {
         New-Item -ItemType Directory -Path $buildFolder -Force | Out-Null
         & $dotnet build $project -c $Configuration -o $payload @buildOptions
         if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE." }
         foreach ($file in 'MP4A.exe', 'MP4A.pri', 'App.xbf', 'UI\MainWindow.xbf', 'Assets\MP4A.ico', 'coreclr.dll', 'phonon.dll',
-            'WebView2Loader.dll', 'Native\SteamAudio-LICENSE.md', 'Native\SteamAudio-THIRDPARTY.md', 'Glassroom\index.html') {
+            'WebView2Loader.dll', 'Native\SteamAudio-LICENSE.md', 'Native\SteamAudio-THIRDPARTY.md', 'Glassroom\index.html',
+            'Tools\FFmpeg\ffmpeg.exe', 'Tools\FFmpeg\ffprobe.exe') {
             if (!(Test-Path -LiteralPath (Join-Path $payload $file) -PathType Leaf)) {
                 throw "Installer payload is missing $file."
             }
+        }
+        $ffmpegOutput = Join-Path $payload 'Tools\FFmpeg'
+        foreach ($tool in 'ffmpeg', 'ffprobe') {
+            $version = & (Join-Path $ffmpegOutput "$tool.exe") -version
+            if ($LASTEXITCODE -ne 0) { throw "Bundled $tool could not start." }
+            $version | Set-Content -LiteralPath (Join-Path $ffmpegOutput "$tool-build.txt") -Encoding utf8
         }
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md'), (Join-Path $PSScriptRoot 'LICENSE'),
             (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.md') -Destination $payload
@@ -53,7 +60,10 @@ if ($Installer) {
         & (Join-Path $PSScriptRoot 'packaging\Copy-Notices.ps1') -Payload $payload -UiDirectory $web -Project $project
         $installerScript = Join-Path $PSScriptRoot 'packaging\MP4A.nsi'
         $temporarySetup = Join-Path $buildFolder 'MP4A-Setup-x64.exe'
-        & $compiler "/DAPP_PAYLOAD=$payload" "/DSETUP_FILE=$temporarySetup" $installerScript
+        $uninstallFiles = Join-Path $buildFolder 'UninstallFiles.nsh'
+        & (Join-Path $PSScriptRoot 'packaging\Write-UninstallFiles.ps1') -Payload $payload -Output $uninstallFiles
+        $appVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $payload 'MP4A.exe')).FileVersion
+        & $compiler "/DAPP_PAYLOAD=$payload" "/DAPP_VERSION=$appVersion" "/DUNINSTALL_FILES=$uninstallFiles" "/DSETUP_FILE=$temporarySetup" $installerScript
         if ($LASTEXITCODE -ne 0) { throw "Installer build failed with exit code $LASTEXITCODE." }
         New-Item -ItemType Directory -Path (Split-Path -Parent $setup) -Force | Out-Null
         Move-Item -LiteralPath $temporarySetup -Destination $setup -Force
@@ -77,17 +87,6 @@ if (!$NoRestore) {
 }
 & $dotnet build $project -c $Configuration --no-restore -o $output
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
-$localTools = Join-Path $PSScriptRoot '.tools\ffmpeg'
-if (Test-Path -LiteralPath $localTools) {
-    $mediaOutput = Join-Path $output 'Tools\FFmpeg'
-    New-Item -ItemType Directory -Force $mediaOutput | Out-Null
-    foreach ($file in 'ffmpeg.exe', 'ffprobe.exe') {
-        $helper = Join-Path $localTools $file
-        if (Test-Path -LiteralPath $helper -PathType Leaf) {
-            Copy-Item -LiteralPath $helper -Destination $mediaOutput
-        }
-    }
-}
 $sacd = Join-Path $PSScriptRoot '.tools\sacd\sacd_extract.exe'
 if (Test-Path -LiteralPath $sacd -PathType Leaf) {
     $sacdOutput = Join-Path $output 'Tools\SACD'

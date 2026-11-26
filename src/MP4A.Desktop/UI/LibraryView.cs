@@ -25,7 +25,8 @@ public sealed partial class MainWindow
             catalogReady = true;
             StartSourceMonitoring();
             RefreshLibrary();
-            _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
+            if (mediaToolsAvailable)
+                _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception error) { ShowError("Preparing the library index", error); }

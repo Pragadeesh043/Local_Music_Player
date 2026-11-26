@@ -21,6 +21,8 @@ public sealed partial class MainWindow
         var cancellation = libraryLifetime.Token;
         try
         {
+            if (!await EnsureFFmpegAsync())
+                return;
             status = "Reindexing the library…";
             if (sourceScan is { } activeScan)
                 await activeScan;
@@ -152,9 +154,10 @@ public sealed partial class MainWindow
             {
                 Interlocked.Increment(ref queueRevision);
                     RefreshLibrary();
-                _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
+                if (mediaToolsAvailable)
+                    _ = RunUiAction("Preparing stored artwork", () => WarmLibraryArtworkAsync());
             }
-            if (reindexing || sourceScan is { IsCompleted: false })
+            if (!mediaToolsAvailable || reindexing || sourceScan is { IsCompleted: false })
                 return;
             foreach (var source in musicSources.ToArray())
             {

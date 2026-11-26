@@ -24,7 +24,7 @@ public sealed partial class MainWindow
 
     private sealed record WebSignalPath(string Mode, bool Dsp);
     private sealed record WebStatus(string? Key, bool Playing, double Volume, bool VolumeEnabled, string Status,
-        int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath);
+        int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath, bool MediaToolsAvailable);
     private sealed record WebTrack(string Id, string Title, string Artist, string AlbumId, string Album,
         string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate, string? ArtworkPreview);
 
@@ -275,6 +275,9 @@ public sealed partial class MainWindow
             case "addFiles": AddFiles(this, new RoutedEventArgs()); break;
             case "watchFolder": AddFolder(this, new RoutedEventArgs()); break;
             case "reindex": ReindexLibrary(this, new RoutedEventArgs()); break;
+            case "setupFFmpeg":
+                _ = RunUiAction("Setting up FFmpeg", async () => { await EnsureFFmpegAsync(); });
+                break;
             case "fullscreen": SwitchFullscreen(); break;
             case "shuffle":
                 ToggleShuffle();
@@ -307,7 +310,7 @@ public sealed partial class MainWindow
     private WebStatus ReadWebStatus() =>
         new(track?.Key, playback?.State == PlaybackState.Playing, outputVolume / 100, volumeEnabled, status,
             webCatalogRevision, outputDevice?.Name ?? "", shuffleEnabled, AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen,
-            ReadWebSignalPath());
+            ReadWebSignalPath(), mediaToolsAvailable);
 
     private double WebPosition() => playback?.Position ?? resumePosition;
 
@@ -325,7 +328,8 @@ public sealed partial class MainWindow
             state.Volume,
             queue,
             queueIndex = current is null ? -1 : 0,
-            desktop = new { state.Status, state.VolumeEnabled, state.CatalogRevision, state.Output, state.Shuffled, state.Fullscreen, state.SignalPath }
+            desktop = new { state.Status, state.VolumeEnabled, state.CatalogRevision, state.Output, state.Shuffled, state.Fullscreen,
+                state.SignalPath, state.MediaToolsAvailable }
         };
     }
 

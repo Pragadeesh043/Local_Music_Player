@@ -13,11 +13,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <FFmpegDirectory Condition="'$(FFmpegDirectory)' == ''">$(MSBuildThisFileDirectory)..\..\.tools\ffmpeg</FFmpegDirectory>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="..\MP4A.Web\dist\**\*" Link="Glassroom\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Assets\MP4A.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(FFmpegDirectory)\ffmpeg.exe;$(FFmpegDirectory)\ffprobe.exe;$(FFmpegDirectory)\*.dll;$(FFmpegDirectory)\LICENSE*;$(FFmpegDirectory)\COPYING*;$(FFmpegDirectory)\README*"
+             Condition="Exists('$(FFmpegDirectory)\ffmpeg.exe') And Exists('$(FFmpegDirectory)\ffprobe.exe')"
+             Link="Tools\FFmpeg\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.9" />
     <PackageReference Include="SQLitePCLRaw.provider.winsqlite3" Version="2.1.11" />
@@ -29,4 +34,9 @@
     <Content Include="Native\SteamAudio-*.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Native\SACD\UPSTREAM.md" Link="Tools\SACD\UPSTREAM.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="RequireBundledFFmpeg" BeforeTargets="PrepareForBuild"
+          Condition="'$(RequireFFmpeg)' == 'true' Or ('$(WindowsPackageType)' != '' And '$(WindowsPackageType)' != 'None')">
+    <Error Condition="!Exists('$(FFmpegDirectory)\ffmpeg.exe') Or !Exists('$(FFmpegDirectory)\ffprobe.exe')"
+           Text="Supply ffmpeg.exe and ffprobe.exe in .tools\ffmpeg or set the FFmpegDirectory MSBuild property." />
+  </Target>
 </Project>
