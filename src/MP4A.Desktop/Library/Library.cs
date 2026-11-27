@@ -191,7 +191,7 @@ internal static class Media
     {
         cancellation.ThrowIfCancellationRequested();
         string[] encoding = webp
-            ? ["-c:v", "libwebp", "-quality", "78", "-compression_level", "4", "-pix_fmt", "yuva420p", "-f", "webp"]
+            ? ["-c:v", "libwebp", "-q:v", "78", "-compression_level", "4", "-pix_fmt", "yuva420p", "-f", "image2pipe"]
             : ["-c:v", "png", "-pix_fmt", "rgba", "-f", "image2pipe"];
         // These commands convert one image. A full filter and codec thread pool adds overhead per cover.
         using var process = Start("ffmpeg", ["-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe",

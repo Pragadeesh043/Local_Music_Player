@@ -2,11 +2,13 @@
 param(
     [Parameter(Mandatory)][string] $OutputDirectory,
     [string] $MakeAppx,
+    [Parameter(Mandatory)][string] $FFmpegDirectory,
     [switch] $NoRestore
 )
 
 $ErrorActionPreference = 'Stop'
 $output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+$FFmpegDirectory = (Resolve-Path -LiteralPath $FFmpegDirectory).Path
 $buildDirectory = Join-Path $output ('build-' + [guid]::NewGuid().ToString('N'))
 $payload = Join-Path $buildDirectory 'payload'
 $project = Join-Path $PSScriptRoot 'src\MP4A.Desktop\MP4A.Desktop.csproj'
@@ -33,7 +35,7 @@ try {
 finally { Pop-Location }
 
 $buildArguments = @('build', $project, '-c', 'Release', '-o', $payload, '-r', 'win-x64',
-    '--self-contained', 'true', '-p:DebugType=embedded', '-p:RequireFFmpeg=true')
+    '--self-contained', 'true', '-p:DebugType=embedded', '-p:RequireFFmpeg=true', "-p:FFmpegDirectory=$FFmpegDirectory")
 if ($NoRestore) { $buildArguments += '--no-restore' }
 Invoke-BuildTool $dotnet $buildArguments
 

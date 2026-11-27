@@ -10,10 +10,11 @@
 
 ## Microsoft Store
 
-Build the x64 Store package with `./build-store.ps1 -OutputDirectory .verify/store`. The script uses MakeAppx from the restored Windows SDK BuildTools package or accepts a path through `-MakeAppx`. It outputs an MSIX and SHA-256 checksum.
+Build the x64 Store package with `./build-store.ps1 -OutputDirectory .verify/store -FFmpegDirectory <path-to-extracted-Tools/FFmpeg>`. Use the checksum-verified MP4A FFmpeg 8.0.3 Windows x64 input ZIP from the release kit. The script uses MakeAppx from the restored Windows SDK BuildTools package or accepts a path through `-MakeAppx`. It outputs an MSIX and SHA-256 checksum.
 
 - Confirm the package identity and version in `packaging/AppxManifest.xml` against Partner Center. Test a locally signed copy on a clean Windows profile with WebView2, and run the Windows App Certification Kit. Upload the original Store package through Partner Center. [MSIX readiness checklist](https://learn.microsoft.com/en-us/windows/apps/publish/store-readiness-checklist)
 - Prepare the listing, privacy policy URL, and full-trust capability explanation. Declare WebView2 and verify the bundled FFmpeg distribution requirements from the release checklist above.
+- Publish the matching `MP4A-FFmpeg-8.0.3-win64-source.tar.gz` from the release kit as a free download at the release URL in the bundled FFmpeg README. Make that source download easy to find from the Store listing or its support page.
 - The Store package includes the SACD helper's upstream instructions. SACD ISO import requires a separately obtained helper on PATH.
 
 ### EXE submission
