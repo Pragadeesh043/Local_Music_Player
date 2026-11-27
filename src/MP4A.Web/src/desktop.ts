@@ -1,6 +1,7 @@
 export type OutputProfile = {
   route: number; volumeMode: number; memory: boolean; memoryLimitMiB: number; targetRate: number
   outputBits: number; sharper: boolean; dopConfirmed: boolean; minimumPhase: boolean; asioDriver: string | null
+  pauseFadeMilliseconds: number
 }
 export type OutputConfiguration = {
   devices: { id: string; name: string; rate: number; channels: number; hardwareVolume: boolean }[]

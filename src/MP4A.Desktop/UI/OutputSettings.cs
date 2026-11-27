@@ -8,7 +8,7 @@ internal enum VolumeMode { Digital, Fixed, Hardware }
 internal sealed record OutputProfile(Route Route, VolumeMode VolumeMode = VolumeMode.Digital, double Volume = 75,
     bool Memory = false, int TargetRate = 0, int OutputBits = 24, bool Sharper = false,
     bool DopConfirmed = false, DspSettings? Dsp = null, bool MinimumPhase = false, string? AsioDriver = null,
-    int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB);
+    int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB, int PauseFadeMilliseconds = 400);
 
 public sealed partial class MainWindow
 {
@@ -55,6 +55,8 @@ public sealed partial class MainWindow
                 ? saved : new(DefaultRoute(device));
             if (!Enum.IsDefined(outputProfile.Route))
                 outputProfile = outputProfile with { Route = DefaultRoute(device) };
+            if (outputProfile.PauseFadeMilliseconds is < 250 or > 600)
+                outputProfile = outputProfile with { PauseFadeMilliseconds = 400 };
             dsp = outputProfile.Dsp is { Parametric: not null, Graphic.Length: 10 } preset ? preset : DspSettings.Flat();
             outputVolume = outputProfile.Volume;
         }
@@ -131,7 +133,7 @@ public sealed partial class MainWindow
             minimumMemory = RamPlaybackBudget.MinimumLimitMiB, maximumMemory = RamPlaybackBudget.MaximumLimitMiB,
             profile = new { outputProfile.Route, outputProfile.VolumeMode, outputProfile.Memory, outputProfile.MemoryLimitMiB,
                 outputProfile.TargetRate, outputProfile.OutputBits, outputProfile.Sharper, outputProfile.DopConfirmed,
-                outputProfile.MinimumPhase, outputProfile.AsioDriver }
+                outputProfile.MinimumPhase, outputProfile.AsioDriver, outputProfile.PauseFadeMilliseconds }
         };
     }
 
@@ -158,7 +160,8 @@ public sealed partial class MainWindow
             (settings.VolumeMode == VolumeMode.Hardware && !device.HardwareVolume) ||
             !OutputRates.Contains(settings.TargetRate) || settings.OutputBits is not (16 or 24 or 32) ||
             settings.MemoryLimitMiB < RamPlaybackBudget.MinimumLimitMiB ||
-            settings.MemoryLimitMiB > RamPlaybackBudget.MaximumLimitMiB)
+            settings.MemoryLimitMiB > RamPlaybackBudget.MaximumLimitMiB ||
+            settings.PauseFadeMilliseconds is < 250 or > 600)
             throw new InvalidOperationException("The output profile contains an unsupported setting.");
         if (settings.Route == Route.Dop && !settings.DopConfirmed)
             throw new InvalidOperationException("Confirm that the DAC supports DoP before saving this route.");

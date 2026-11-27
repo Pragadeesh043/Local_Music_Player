@@ -13,6 +13,7 @@ public sealed partial class MainWindow
     private const string CoverOrigin = MediaOrigin + "cover/";
     private LibraryQuery? webQueueScope;
     private Track[] webQueued = [];
+    private Task<WebAlbum[]>? featuredAlbums;
 
     private sealed record WebAlbum(string Id, string Title, string Artist, int Year, string Genre, string Edition,
         string? Artwork, string FirstTrackId, string? ArtworkPreview);
@@ -24,6 +25,29 @@ public sealed partial class MainWindow
         new("played", "Frequently played", "Tracks played at least three times"),
         new("filtered", "Current smart filter", "Tracks matching the current library filters")
     ];
+
+    private Task<WebAlbum[]> ReadFeaturedAlbumsAsync()
+    {
+        const int count = 5;
+        const string setting = "featured-albums";
+        if (!catalogReady)
+            return Task.FromResult(Array.Empty<WebAlbum>());
+        if (featuredAlbums is null || featuredAlbums.IsFaulted || featuredAlbums.IsCanceled ||
+            (featuredAlbums.IsCompletedSuccessfully && featuredAlbums.Result.Length == 0))
+        {
+            featuredAlbums = Task.Run(() =>
+            {
+                var previous = library.Get<string[][]>(setting);
+                var avoid = previous?.Length == count ? previous[Random.Shared.Next(count)] : null;
+                var page = library.AlbumPage(new("", new SmartFilter()), 0, count, featured: true, previousAlbum: avoid);
+                var covers = thumbnails.ReadCovers(page.Tracks.Select(item => item.Key));
+                if (page.Tracks.Length > 0)
+                    library.Put(setting, page.Tracks.Select(item => new[] { item.AlbumGroup, item.Edition }).ToArray());
+                return page.Tracks.Select(item => ToWebAlbum(item, covers.GetValueOrDefault(item.Key))).ToArray();
+            }, libraryLifetime.Token);
+        }
+        return featuredAlbums;
+    }
 
     private Task<object> ReadWebLibraryAsync(JsonElement args)
     {

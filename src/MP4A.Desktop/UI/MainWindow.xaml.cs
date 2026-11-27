@@ -177,7 +177,9 @@ public sealed partial class MainWindow : Window
     private Task PausePlaybackAsync()
     {
         playbackRequested = false;
-        return playback?.PauseAsync() ?? Task.CompletedTask;
+        var pause = playback?.PauseAsync() ?? Task.CompletedTask;
+        UpdateMediaControls(force: false);
+        return pause;
     }
 
     private async Task ResumePlaybackAsync()
@@ -197,7 +199,8 @@ public sealed partial class MainWindow : Window
         playbackRequested = true;
         try
         {
-            await session.WaitUntilBufferedAsync(libraryLifetime.Token);
+            if (session.State != PlaybackState.Playing)
+                await session.WaitUntilBufferedAsync(libraryLifetime.Token);
             if (!ready || !playbackRequested || !ReferenceEquals(playback, session))
                 return;
             await session.ResumeAsync();
@@ -332,7 +335,8 @@ public sealed partial class MainWindow : Window
             var options = new PlaybackOptions(outputProfile.Memory, outputProfile.TargetRate, outputProfile.OutputBits,
                 outputProfile.Sharper, ImpulsePath: settings.ImpulsePath, MinimumPhase: outputProfile.MinimumPhase,
                 AsioDriver: outputProfile.AsioDriver, Preparation: preparation.Token, NextTrack: current => queue(current, false),
-                MemoryLimitMiB: outputProfile.MemoryLimitMiB, CanAdvance: () => Volatile.Read(ref queueRevision) == revision);
+                MemoryLimitMiB: outputProfile.MemoryLimitMiB, CanAdvance: () => Volatile.Read(ref queueRevision) == revision,
+                PauseFadeMilliseconds: outputProfile.PauseFadeMilliseconds);
             status = options.Memory ? "Decoding track to RAM…" : "Opening audio stream…";
             var session = await Task.Run(() => new Playback(selected, device, route, seconds, settings, volume, options));
             if (request != generation || !ready)

@@ -92,6 +92,8 @@ export class DemoBridge implements Bridge {
   private playing = false
   private volume = 0.7
   private listening = false
+  private featured = albums.map(album => ({ album, score: Math.random() }))
+    .sort((a, b) => a.score - b.score).slice(0, 5).map(({ album }) => album)
 
   constructor() {
     window.setInterval(() => {
@@ -156,6 +158,7 @@ export class DemoBridge implements Bridge {
     switch (method) {
       case 'state': return this.state()
       case 'library': return library(args)
+      case 'featuredAlbums': return this.featured
       case 'lyrics': return args.id === 'violet-1' ? catalog.lyrics : []
       case 'listenSignal':
         this.listening = args.enabled

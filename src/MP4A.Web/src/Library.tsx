@@ -144,7 +144,7 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
       {failure && <div className="catalog-message catalog-error" role="alert">{failure[1]}
         <button className="back-link ml-2" onClick={() => retry(failure[0])}>Retry</button>
       </div>}
-      {albums.length > 0 && <Discover bridge={bridge} folder={folder} albums={albums} recent={recent}
+      {discover && <Discover bridge={bridge} folder={folder} albums={albums} recent={recent}
         open={open} play={play} enqueue={enqueue} inspect={inspect} />}
       {!discover && total !== null && total > 0 && <VirtualCatalog
         pages={pages} total={total} load={load} kind={kind} scrollElement={scrollElement} open={open}
@@ -169,10 +169,12 @@ function Discover({ bridge, folder, albums, recent, open, play, enqueue, inspect
   const loadTracks = useCallback(() => bridge.request('library', { kind: 'tracks', offset: 0, limit: discoverySize,
     ...(folder && { folder }) }), [bridge, folder])
   const { data, error } = useResource(loadTracks)
+  const loadFeatured = useCallback(() => bridge.request('featuredAlbums', {}), [bridge])
+  const { data: featured } = useResource(loadFeatured)
   const tracks = recent.length ? recent : data?.items.filter(item => 'albumId' in item)
 
   return <>
-    <FeaturedCarousel albums={albums} track={tracks?.[0]} recent={recent.length > 0} open={open} play={play} />
+    {!!featured?.length && <FeaturedCarousel albums={featured} open={open} play={play} />}
     <div className="discover-sections">
       <section className="discover-tracks">
         <h2>{recent.length ? 'Recently Played' : 'Library Tracks'}</h2>
@@ -180,66 +182,60 @@ function Discover({ bridge, folder, albums, recent, open, play, enqueue, inspect
         {!tracks && <p className="catalog-message">{error ?? 'Loading tracks…'}</p>}
         {tracks?.length === 0 && <p className="catalog-message">No tracks in this view.</p>}
       </section>
-      <section className="discover-albums">
+      {albums.length > 0 && <section className="discover-albums">
         <h2>From Your Library</h2>
         <div className="discover-album-grid">
           {albums.map(album => <AlbumCard key={album.id} item={album} open={() => open({ kind: 'album', item: album })} />)}
         </div>
-      </section>
+      </section>}
     </div>
   </>
 }
 
-function FeaturedCarousel({ albums, track, recent, open, play }: {
-  albums: Album[]; track?: Track; recent: boolean
+function FeaturedCarousel({ albums, open, play }: {
+  albums: Album[]
   open: (detail: Detail) => void; play: (id: string, albumId?: string) => void
 }) {
-  const slides: { item: Album | Track; label: string; album?: Album }[] = albums.slice(0, 4).map((album, index) => ({
-    item: album, label: index === 0 ? 'Featured album' : 'Library highlight', album,
-  }))
-  if (track) slides.splice(1, 0, { item: track, label: recent ? 'Recently played' : 'Featured track',
-    album: albums.find(album => album.id === track.albumId) })
-  const [index, setIndex] = useState(0)
+  const [selection, select] = useState({ index: 0 })
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const [rotation, setRotation] = useState<boolean>()
   const reducedMotion = useReducedMotion()
   const rotating = rotation ?? !reducedMotion
-  const count = slides.length
-  const current = index % count
-  const { item, label, album } = slides[current]
-  const isTrack = 'albumId' in item
+  const count = albums.length
+  const current = selection.index % count
+  const album = albums[current]
 
   useEffect(() => {
     if (!rotating || hovered || focused || count < 2) return
     const timer = window.setInterval(() => {
-      if (!document.hidden) setIndex((current + 1) % count)
+      if (!document.hidden) select({ index: (current + 1) % count })
     }, 6500)
     return () => window.clearInterval(timer)
-  }, [rotating, hovered, focused, count, current])
+  }, [rotating, hovered, focused, count, current, selection])
 
   return <section className="featured-albums" aria-label="Discover highlights" aria-roledescription="carousel"
-    onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}
-    onFocus={() => setFocused(true)} onBlur={event => {
+    onPointerEnter={event => { if (event.pointerType !== 'touch') setHovered(true) }} onPointerLeave={() => setHovered(false)}
+    onFocus={event => setFocused(event.target.matches(':focus-visible'))} onBlur={event => {
       if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
     }}>
     <div className="hero-slides" aria-live={rotating && !focused && !hovered ? 'off' : 'polite'}>
       <AnimatePresence initial={false} mode="wait">
-        <motion.article className="hero" key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        <motion.article className="hero" key={album.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           exit={{ opacity: 0 }} transition={{ duration: reducedMotion ? 0 : .23 }}
           aria-label={`${current + 1} of ${count}`} aria-roledescription="slide">
-          <Artwork src={item.artwork} preview={item.artworkPreview} className="hero-image" loading="eager" />
+          <Artwork src={album.artwork} preview={album.artworkPreview} className="hero-image" loading="eager" />
           <div className="hero-copy">
-            <span className="hero-label">{label}</span>
-            <h2 title={item.title}>{item.title}</h2>
-            <p>{item.artist}</p>
+            <span className="hero-label">Featured album</span>
+            <h2 title={album.title}>{album.title}</h2>
+            <p>{album.artist}</p>
             <div className="hero-actions">
-              <button className="primary-action" aria-label={`Play ${isTrack ? '' : 'album '}${item.title}`}
-                onClick={() => isTrack ? play(item.id, item.albumId) : play(item.firstTrackId, item.id)}>
-                <Play size={14} fill="currentColor" />{isTrack ? 'Play track' : 'Play album'}
+              <button className="primary-action" aria-label={'Play album ' + album.title}
+                onClick={() => play(album.firstTrackId, album.id)}>
+                <Play size={14} fill="currentColor" />Play album
               </button>
-              {album && <button className="hero-link" aria-label={'View album ' + album.title}
-                onClick={() => open({ kind: 'album', item: album })}>View album <ArrowRight size={14} /></button>}
+              <button className="hero-link" aria-label={'View album ' + album.title}
+                onClick={() => open({ kind: 'album', item: album })}>View album <ArrowRight size={14} /></button>
             </div>
           </div>
         </motion.article>
@@ -249,10 +245,10 @@ function FeaturedCarousel({ albums, track, recent, open, play }: {
       <button className="icon-button" aria-label={rotating ? 'Pause carousel' : 'Resume carousel'} onClick={() => setRotation(!rotating)}>
         {rotating ? <Pause size={14} /> : <Play size={14} />}
       </button>
-      <button className="icon-button" aria-label="Previous highlight" onClick={() => setIndex((current - 1 + count) % count)}><ChevronLeft size={17} /></button>
-      {slides.map((slide, position) => <button key={slide.item.id} className="carousel-dot" aria-label={'Show ' + slide.item.title}
-        aria-current={current === position ? 'true' : undefined} onClick={() => setIndex(position)} />)}
-      <button className="icon-button" aria-label="Next highlight" onClick={() => setIndex((current + 1) % count)}><ChevronRight size={17} /></button>
+      <button className="icon-button" aria-label="Previous highlight" onClick={() => select({ index: (current - 1 + count) % count })}><ChevronLeft size={17} /></button>
+      {albums.map((item, position) => <button key={item.id} className="carousel-dot" aria-label={'Show ' + item.title}
+        aria-current={current === position ? 'true' : undefined} onClick={() => select({ index: position })} />)}
+      <button className="icon-button" aria-label="Next highlight" onClick={() => select({ index: (current + 1) % count })}><ChevronRight size={17} /></button>
     </div>}
   </section>
 }

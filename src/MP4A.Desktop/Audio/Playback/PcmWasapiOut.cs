@@ -5,7 +5,7 @@ using NAudio.Wave;
 
 namespace Soundroom;
 
-internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBits) : IWavePlayer
+internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBits, int pauseFadeMilliseconds) : IWavePlayer
 {
     private const int PollMilliseconds = 5;
     private const long BufferDuration = 1_000_000; // 100 ms in WASAPI reference time.
@@ -39,8 +39,14 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
     {
         lock (gate)
         {
-            if (closing || finished || (state == PlaybackState.Playing && pause is null))
+            if (closing || finished)
                 return Task.CompletedTask;
+            if (state == PlaybackState.Playing)
+            {
+                Complete(ref pause);
+                wake.Set();
+                return Task.CompletedTask;
+            }
             play ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
             wake.Set();
             return play.Task;
@@ -99,10 +105,12 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
             int capacity = client.BufferSize;
             int alignment = OutputWaveFormat.BlockAlign;
             byte[] buffer = new byte[capacity * alignment];
-            int rampFrames = Math.Max(2, OutputWaveFormat.SampleRate * 6 / 1000);
+            double startupStep = 1d / Math.Max(1, OutputWaveFormat.SampleRate * 6 / 1000 - 1);
+            double pauseStep = 1d / Math.Max(1, OutputWaveFormat.SampleRate * pauseFadeMilliseconds / 1000 - 1);
             int tailFrames = Math.Clamp(OutputWaveFormat.SampleRate * 25 / 1000, 1, capacity);
             var quantizer = new Quantizer();
-            int fadeIn = rampFrames, fadeOut = 0, silentTail = 0;
+            double phase = 0, riseStep = startupStep;
+            int silentTail = 0;
             bool started = false, ending = false;
             long drainStarted = 0;
             initialized.TrySetResult();
@@ -121,7 +129,8 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                             wait = play is null ? Timeout.Infinite : PollMilliseconds;
                             if (play is not null && source!.CanPrimePcm(capacity))
                             {
-                                fadeIn = state == PlaybackState.Paused ? 0 : rampFrames;
+                                phase = 0;
+                                riseStep = state == PlaybackState.Paused ? pauseStep : startupStep;
                                 if (Fill(capacity, fadingOut: false) == 0)
                                     break;
                                 client.Start();
@@ -135,7 +144,7 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                             wait = PollMilliseconds;
                             int padding = client.CurrentPadding;
                             int available = capacity - padding;
-                            if (ending || (pause is not null && fadeOut >= rampFrames))
+                            if (ending || (pause is not null && phase == 0))
                             {
                                 // Once padding contains only silence, discarding it cannot skip media.
                                 if (padding <= silentTail)
@@ -146,7 +155,7 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                                     if (ending)
                                         break;
                                     state = PlaybackState.Paused;
-                                    fadeOut = silentTail = 0;
+                                    silentTail = 0;
                                     drainStarted = 0;
                                     Complete(ref pause);
                                     if (play is not null)
@@ -167,8 +176,11 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                             }
                             else if (available > 0)
                             {
+                                // A canceled pause can still have silence queued ahead of the next packet.
+                                silentTail = 0;
                                 bool fadingOut = pause is not null;
-                                Fill(fadingOut ? Math.Min(available, rampFrames - fadeOut) : available, fadingOut);
+                                int frames = fadingOut ? Math.Min(available, (int)Math.Ceiling(phase / pauseStep)) : available;
+                                Fill(frames, fadingOut);
                             }
                         }
                     }
@@ -187,17 +199,17 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                 if (bytes > 0)
                 {
                     int count = bytes / alignment;
-                    if (fadeIn < rampFrames)
-                        fadeIn += Ramp(buffer.AsSpan(0, bytes), fadeIn, rampFrames, rising: true, quantizer);
                     if (fadingOut)
-                        fadeOut += Ramp(buffer.AsSpan(0, bytes), fadeOut, rampFrames, rising: false, quantizer);
+                        riseStep = pauseStep;
+                    if (fadingOut || phase < 1)
+                        Ramp(buffer.AsSpan(0, bytes), ref phase, fadingOut ? pauseStep : riseStep, fadingOut, quantizer);
                     IntPtr destination = renderer.GetBuffer(count);
                     Marshal.Copy(buffer, 0, destination, bytes);
                     renderer.ReleaseBuffer(count, AudioClientBufferFlags.None);
                     source.ConfirmPcmPacket();
                 }
                 ending = bytes < frames * alignment;
-                if (ending || fadeOut >= rampFrames)
+                if (ending || (fadingOut && phase == 0))
                     drainStarted = Stopwatch.GetTimestamp();
                 return bytes;
             }
@@ -221,18 +233,25 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
         }
     }
 
-    private int Ramp(Span<byte> packet, int index, int length, bool rising, Quantizer quantizer)
+    private void Ramp(Span<byte> packet, ref double phase, double step, bool fadingOut, Quantizer quantizer)
     {
         int alignment = OutputWaveFormat.BlockAlign;
-        int frames = Math.Min(packet.Length / alignment, length - index);
         int sampleBytes = OutputWaveFormat.BitsPerSample / 8;
-        for (int frame = 0; frame < frames; frame++)
+        for (int offset = 0; offset < packet.Length; offset += alignment)
         {
-            double t = (double)(index + frame) / (length - 1);
-            double gain = t * t * (3 - 2 * t);
-            if (!rising) gain = 1 - gain;
-            if (gain == 1) continue;
-            var samples = packet.Slice(frame * alignment, alignment);
+            if (fadingOut)
+                phase = phase <= step * 1.000001 ? 0 : phase - step;
+            double gain = phase * phase * (3 - 2 * phase);
+            if (!fadingOut)
+                phase = Math.Min(1, phase + step);
+            if (gain == 1)
+                break;
+            var samples = packet.Slice(offset, alignment);
+            if (gain == 0)
+            {
+                samples.Clear();
+                continue;
+            }
             if (!exclusive)
             {
                 foreach (ref float sample in MemoryMarshal.Cast<byte, float>(samples))
@@ -247,7 +266,6 @@ internal sealed class PcmWasapiOut(string deviceId, bool exclusive, int validBit
                 }
             }
         }
-        return frames;
     }
 
     public void Dispose()

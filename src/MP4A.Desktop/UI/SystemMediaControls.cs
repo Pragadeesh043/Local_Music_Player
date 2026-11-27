@@ -109,7 +109,8 @@ public sealed partial class MainWindow
             }
             MediaPlaybackStatus state = selected is null ? MediaPlaybackStatus.Closed : playback?.State switch
             {
-                PlaybackState.Playing => MediaPlaybackStatus.Playing,
+                PlaybackState.Playing when playbackRequested => MediaPlaybackStatus.Playing,
+                PlaybackState.Playing => MediaPlaybackStatus.Paused,
                 PlaybackState.Paused => MediaPlaybackStatus.Paused,
                 _ when playbackRequested && preparingPlayback is not null => MediaPlaybackStatus.Changing,
                 _ when playback is not null => MediaPlaybackStatus.Paused,

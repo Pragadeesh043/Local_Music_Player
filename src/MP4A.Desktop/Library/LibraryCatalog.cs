@@ -237,7 +237,7 @@ internal sealed partial class Library
         return new(ReadTracks(cmd), total);
     }
 
-    public LibraryPage AlbumPage(LibraryQuery query, int offset, int limit)
+    public LibraryPage AlbumPage(LibraryQuery query, int offset, int limit, bool featured = false, string[]? previousAlbum = null)
     {
         using var db = Open();
         using var transaction = db.BeginTransaction(deferred: true);
@@ -246,6 +246,14 @@ internal sealed partial class Library
         string where = Where(cmd, query) + " AND c.has_album=1";
         cmd.CommandText = $"SELECT count(*) FROM (SELECT 1 FROM track_catalog c WHERE {where} GROUP BY c.album,c.edition)";
         int total = Convert.ToInt32(cmd.ExecuteScalar());
+        string order = featured ? "random()" : "r.album COLLATE NOCASE,r.edition COLLATE NOCASE,r.key";
+        if (featured && total > limit && previousAlbum is [string album, string edition])
+        {
+            // Demote one of the previous picks so this launch cannot show the same set.
+            order = "CASE WHEN r.album=$previousAlbum AND r.edition=$previousEdition THEN 1 ELSE 0 END, random()";
+            cmd.Parameters.AddWithValue("$previousAlbum", album);
+            cmd.Parameters.AddWithValue("$previousEdition", edition);
+        }
         cmd.CommandText = $"""
             WITH ranked AS (
                 SELECT c.key, c.album, c.edition,
@@ -253,7 +261,7 @@ internal sealed partial class Library
                 FROM track_catalog c WHERE {where}
             )
             SELECT t.data FROM ranked r JOIN tracks t ON t.path=r.key
-            WHERE r.slot=1 ORDER BY r.album COLLATE NOCASE,r.edition COLLATE NOCASE,r.key
+            WHERE r.slot=1 ORDER BY {order}
             LIMIT $limit OFFSET $offset
             """;
         cmd.Parameters.AddWithValue("$limit", limit);

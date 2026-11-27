@@ -83,6 +83,10 @@ export function OutputSettings({ player }: { player: Player }) {
             <option value={0}>Linear</option><option value={1}>Minimum</option>
           </select></label>
           <label className="tool-check"><input type="checkbox" checked={draft.sharper} onChange={event => update('sharper', event.target.checked)} /> Steeper resampling filter</label>
+          <label>PCM pause and resume fade · {draft.pauseFadeMilliseconds} ms
+            <input type="range" min={250} max={600} step={50} value={draft.pauseFadeMilliseconds}
+              onChange={event => update('pauseFadeMilliseconds', Number(event.target.value))} />
+          </label>
         </div>
       </section>
       <section className="tool-card">

@@ -23,7 +23,7 @@ public sealed partial class MainWindow
     private int webCatalogRevision;
 
     private sealed record WebSignalPath(string Mode, bool Dsp);
-    private sealed record WebStatus(string? Key, bool Playing, double Volume, bool VolumeEnabled, string Status,
+    private sealed record WebStatus(string? Key, bool Playing, bool Pausing, double Volume, bool VolumeEnabled, string Status,
         int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath, bool MediaToolsAvailable);
     private sealed record WebTrack(string Id, string Title, string Artist, string AlbumId, string Album,
         string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate, string? ArtworkPreview);
@@ -192,13 +192,17 @@ public sealed partial class MainWindow
             case "library":
                 await libraryInitialization;
                 return await ReadWebLibraryAsync(args);
+            case "featuredAlbums":
+                await libraryInitialization;
+                return await ReadFeaturedAlbumsAsync();
             case "lyrics":
                 return await ReadWebLyricsAsync(WebText(args, "id"));
             case "play":
                 await PlayFromGlassroom(args);
                 break;
             case "pause":
-                await PausePlaybackAsync();
+                // Acknowledge the transport request so Play can reverse a fade while it is running.
+                _ = RunUiAction("Pausing playback", PausePlaybackAsync);
                 break;
             case "seek":
                 await SeekAsync(WebText(args, "id"), args.GetProperty("position").GetDouble());
@@ -308,7 +312,8 @@ public sealed partial class MainWindow
     }
 
     private WebStatus ReadWebStatus() =>
-        new(track?.Key, playback?.State == PlaybackState.Playing, outputVolume / 100, volumeEnabled, status,
+        new(track?.Key, playback?.State == PlaybackState.Playing, playback?.State == PlaybackState.Playing && !playbackRequested,
+            outputVolume / 100, volumeEnabled, status,
             webCatalogRevision, outputDevice?.Name ?? "", shuffleEnabled, AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen,
             ReadWebSignalPath(), mediaToolsAvailable);
 
@@ -324,6 +329,7 @@ public sealed partial class MainWindow
         {
             track = current is null ? null : queue[0],
             state.Playing,
+            state.Pausing,
             position = WebPosition(),
             state.Volume,
             queue,

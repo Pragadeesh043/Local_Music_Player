@@ -65,13 +65,14 @@ export function Dock({ player, notify, expand, active, queueVisible, toggleQueue
 }
 
 function Transport({ player, notify }: { player: Player; notify: Notify }) {
-  const { playing, track, queueIndex, queue, desktop } = usePlayer(player)
+  const { playing, pausing, track, queueIndex, queue, desktop } = usePlayer(player)
+  const canPause = playing && !pausing
   return <div className="transport">
     <IconButton label="Previous or restart" disabled={!track} action={() => notify(player.send('previous', {}))}><SkipBack size={17} fill="currentColor" /></IconButton>
-    <motion.button className="play-button" title={playing ? 'Pause' : 'Play'} disabled={!track}
-      aria-label={playing ? 'Pause' : 'Play'} whileTap={{ scale: 0.9 }} transition={spring}
-      onClick={() => notify(player.send(playing ? 'pause' : 'play', {}))}>
-      {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+    <motion.button className="play-button" title={canPause ? 'Pause' : 'Play'} disabled={!track}
+      aria-label={canPause ? 'Pause' : 'Play'} whileTap={{ scale: 0.9 }} transition={spring}
+      onClick={() => notify(player.send(canPause ? 'pause' : 'play', {}))}>
+      {canPause ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
     </motion.button>
     <IconButton label="Next track" disabled={queueIndex >= queue.length - 1 && !(desktop && track)} action={() => notify(player.send('next', {}))}><SkipForward size={17} fill="currentColor" /></IconButton>
   </div>

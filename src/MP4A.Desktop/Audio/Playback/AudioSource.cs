@@ -4,7 +4,7 @@ internal sealed record PlaybackOptions(bool Memory = false, int TargetRate = 0, 
     bool Sharper = false, IReadOnlyList<Track>? Following = null, string? ImpulsePath = null,
     bool MinimumPhase = false, string? AsioDriver = null, CancellationToken Preparation = default,
     Func<Track, Track?>? NextTrack = null, int MemoryLimitMiB = RamPlaybackBudget.DefaultLimitMiB,
-    Func<bool>? CanAdvance = null)
+    Func<bool>? CanAdvance = null, int PauseFadeMilliseconds = 400)
 {
     public string ResamplingFilter(int rate) =>
         $"aresample={rate}:resampler=swr:tsf=dblp:filter_type=kaiser:kaiser_beta=12:filter_size={(Sharper ? 256 : 128)}:phase_shift=12:exact_rational=1:cutoff={(Sharper ? "0.97" : "0.91")}";

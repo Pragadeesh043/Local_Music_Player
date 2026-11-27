@@ -69,11 +69,13 @@ internal sealed class Playback : IWaveProvider, IDisposable
     private readonly double offset;
     private readonly int rate;
     private IWavePlayer? output;
+    private readonly int pauseFadeMilliseconds;
 
     public Playback(Track track, OutputDevice device, Route route, double offset,
         DspSettings settings, float volume, PlaybackOptions? options = null)
     {
         options ??= new();
+        pauseFadeMilliseconds = options.PauseFadeMilliseconds;
         this.route = route;
         canAdvance = options.CanAdvance;
         controls = new(settings, volume);
@@ -213,7 +215,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
         }
         if (!dop)
         {
-            output = new PcmWasapiOut(device.Id, exclusive, OutputBits);
+            output = new PcmWasapiOut(device.Id, exclusive, OutputBits, pauseFadeMilliseconds);
             output.PlaybackStopped += OutputStopped;
             output.Init(this);
             StartProducer();

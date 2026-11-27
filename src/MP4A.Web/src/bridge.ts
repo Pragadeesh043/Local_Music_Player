@@ -37,6 +37,7 @@ export type DesktopAction = 'addFiles' | 'watchFolder' | 'reindex' | 'fullscreen
 export type Playback = {
   track: Track | null
   playing: boolean
+  pausing?: boolean
   position: number
   volume: number
   queue: Track[]
@@ -60,6 +61,7 @@ export type Page = { items: (Album | Track | Playlist)[]; total: number }
 export type Commands = {
   state: { args: Record<string, never>; result: Playback }
   library: { args: LibraryQuery; result: Page }
+  featuredAlbums: { args: Record<string, never>; result: Album[] }
   lyrics: { args: { id: string }; result: Lyric[] }
   play: { args: { id?: string; albumId?: string; playlistId?: string; query?: string; folder?: string }; result: null }
   pause: { args: Record<string, never>; result: null }
@@ -129,7 +131,7 @@ class DesktopBridge implements Bridge {
   request<K extends Command>(method: K, args: Commands[K]['args']): Promise<Commands[K]['result']> {
     const id = ++this.nextId
     const timeout = method === 'analyzeTrack' ? 1_800_000
-      : ['library', 'play', 'seek', 'next', 'previous', 'jump', 'selectOutput', 'saveOutput', 'editDsp', 'booklet'].includes(method) ? 120_000 : 8000
+      : ['library', 'featuredAlbums', 'play', 'seek', 'next', 'previous', 'jump', 'selectOutput', 'saveOutput', 'editDsp', 'booklet'].includes(method) ? 120_000 : 8000
     return new Promise<unknown>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.pending.delete(id)
