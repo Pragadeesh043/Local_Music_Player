@@ -26,11 +26,6 @@ For an EXE submission, use Partner Center to submit a direct, versioned HTTPS UR
 - Supply the silent install argument `/S` in Partner Center. Verify install and removal with the signed installer. [Microsoft Store certification process](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/app-certification-process)
 - Declare the WebView2 dependency and identify bundled FFmpeg components in the submission materials. [Microsoft Store certification process](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/app-certification-process)
 
-## Release notes draft
+## Release notes
 
-- Refreshed Discover and Now Playing with album-art lighting, live signal telemetry, and quicker access to DSP and output controls.
-- Improved PCM pause and resume in WASAPI shared and exclusive output.
-- Stored indexed album covers and previews locally for browsing and restart.
-- Restored the previous Browse scroll position when returning from an album.
-- Organized the Windows app, web interface, and optional C++ example into clearly named projects.
-- Added a Start menu shortcut and a Windows Installed apps entry with uninstall support.
+See the [changelog](../CHANGELOG.md) for user-facing changes by version.

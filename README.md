@@ -32,6 +32,7 @@ The installer bundles FFmpeg, FFprobe, .NET, and the Windows App SDK runtime. SA
 - [Build and contribute](docs/development.md)
 - [Audio modes, DSP, and verification](docs/audio.md)
 - [Release checklist](docs/release.md)
+- [Changelog](CHANGELOG.md)
 - [Third-party notices](THIRD-PARTY-NOTICES.md) and [FFmpeg source archive](https://github.com/Pragadeesh043/MP4A/releases/download/v1.0.1/MP4A-FFmpeg-8.0.3-win64-source.tar.gz)
 
 MP4A is available under the [MIT license](LICENSE). Third-party components retain their own licenses.
