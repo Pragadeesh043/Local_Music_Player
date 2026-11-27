@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { Track } from './bridge'
 import type { LiveSignal } from './desktop'
 import { Plot } from './Plot'
@@ -44,6 +45,34 @@ export function SignalPlots({ sample, spectrumOnly = false, phase = false }: {
   </div>
 }
 
+function PeakMeter({ label, peak }: { label: string; peak?: number }) {
+  const level = peak == null ? -60 : Math.max(-60, Math.min(0, toDb(peak)))
+  const [held, setHeld] = useState(-60)
+  const latest = useRef(-60)
+  const ceiling = useRef(-60)
+  const timer = useRef<number>(undefined)
+
+  useEffect(() => {
+    latest.current = level
+    if (level < ceiling.current && timer.current !== undefined) return
+    window.clearTimeout(timer.current)
+    ceiling.current = level
+    setHeld(level)
+    timer.current = window.setTimeout(() => {
+      timer.current = undefined
+      ceiling.current = latest.current
+      setHeld(latest.current)
+    }, 650)
+  }, [level])
+
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  return <span className="peak-meter">
+    <meter min={-60} max={0} value={level} aria-label={label + ' output peak in dBFS'} />
+    <span className="peak-hold" style={{ left: (held + 60) / .6 + '%', opacity: held > -60 ? 1 : 0 }} aria-hidden="true" />
+  </span>
+}
+
 export function Telemetry({ player, compact = false }: { player: Player; compact?: boolean }) {
   const { desktop, playing, track, liveSignal } = usePlayer(player)
   const enabled = Boolean(desktop || liveSignal)
@@ -58,8 +87,7 @@ export function Telemetry({ player, compact = false }: { player: Player; compact
     <div className="telemetry-meters" aria-label="Output peak levels">
       {meters.map(({ label, peak }: { label: string; peak?: number }) => <div className="telemetry-meter" key={label}>
         <span>{label}</span>
-        <meter min={-60} max={0} value={peak == null ? -60 : Math.max(-60, Math.min(0, toDb(peak)))}
-          aria-label={label + ' output peak in dBFS'} />
+        <PeakMeter key={track?.id} label={label} peak={peak} />
         <small>{peak == null ? '—' : peakLabel(peak)} <span>dBFS</span></small>
       </div>)}
     </div>

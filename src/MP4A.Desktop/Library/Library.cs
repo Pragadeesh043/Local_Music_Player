@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -76,6 +77,7 @@ internal static class Media
 
     public static Process Start(string tool, params string[] arguments)
     {
+        bool readsMetadata = tool == "ffprobe";
         bool usesFFmpeg = tool is "ffmpeg" or "ffprobe";
         if (usesFFmpeg)
             tool = ResolveFFmpeg(tool + ".exe") ?? throw new IOException(FFmpegSetupMessage);
@@ -84,6 +86,8 @@ internal static class Media
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true
         };
+        if (readsMetadata)
+            info.StandardOutputEncoding = new UTF8Encoding(false, throwOnInvalidBytes: true);
         foreach (var arg in arguments)
             info.ArgumentList.Add(arg);
         try { return Process.Start(info) ?? throw new IOException($"Could not start {tool}."); }
@@ -110,7 +114,7 @@ internal static class Media
     public static async Task<Track> ProbeAsync(string path)
     {
         using var process = Start("ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-select_streams", "a:0",
-            "-show_streams", "-show_format", "-of", "json", "-i", path);
+            "-show_streams", "-show_format", "-of", "json=string_validation=fail", "-i", path);
         var output = process.StandardOutput.ReadToEndAsync();
         var error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();

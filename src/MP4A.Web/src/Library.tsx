@@ -2,7 +2,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Info, ListMusic, Pause, Play, Plus } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type { CSSProperties, RefObject } from 'react'
+import { useAmbient } from './Ambient'
 import { Artwork } from './Artwork'
 import type { Album, Bridge, LibraryQuery, Page, Playlist, Track } from './bridge'
 import { timeLabel, useResource } from './player'
@@ -15,7 +16,7 @@ const pageSize = 60
 const discoverySize = 6
 const recentPages = new WeakMap<Bridge, Map<string, Page>>()
 
-export function CatalogView({ bridge, revision, route, query, folder, detail, open, back, play, enqueue, inspect, recent, browsePosition, browseScope }: {
+export function CatalogView({ bridge, revision, route, query, folder, detail, open, back, play, enqueue, inspect, recent, playingTrackId, browsePosition, browseScope }: {
   bridge: Bridge
   revision: number
   route: Route
@@ -28,6 +29,7 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
   enqueue: (id: string) => void
   inspect?: (id: string) => void
   recent: Track[]
+  playingTrackId?: string
   browsePosition?: RefObject<BrowsePosition | null>
   browseScope: string
 }) {
@@ -52,6 +54,7 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
   const active = useRef(false)
   const kind = detail || route === 'Library' ? 'tracks' : route === 'Playlists' ? 'playlists' : 'albums'
   const albumId = detail?.kind === 'album' ? detail.item.id : undefined
+  const albumAmbient = useAmbient(detail?.kind === 'album' ? detail.item.artwork : undefined)
   const playlistId = detail?.kind === 'playlist' ? detail.item.id : undefined
   const discover = route === 'Discover' && !query && !detail
   const argsFor = useCallback((offset: number): LibraryQuery => ({
@@ -121,7 +124,8 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
   return <div className="catalog-scroll" ref={setScrollElement} onScroll={browsePosition ? event => savePosition(event.currentTarget) : undefined}
     tabIndex={0} aria-label={detail?.item.title ?? route}>
     <div className="catalog-content" style={restoring && !failure ? { visibility: 'hidden' } : undefined}>
-      {detail ? <header className="detail-header">
+      {detail ? <header className={'detail-header' + (albumId ? ' album-detail-header' : '')}
+        style={albumId ? { '--detail-glow': albumAmbient.colors[0] } as CSSProperties : undefined}>
         <button className="back-link" onClick={back}><ArrowLeft size={16} /> Back to {route}</button>
         <div className="detail-identity">
           {detail.kind === 'album' ? <Artwork src={detail.item.artwork} preview={detail.item.artworkPreview} loading="eager" /> : <span className="playlist-art"><ListMusic /></span>}
@@ -148,6 +152,7 @@ export function CatalogView({ bridge, revision, route, query, folder, detail, op
         open={open} play={play} enqueue={enqueue} inspect={inspect} />}
       {!discover && total !== null && total > 0 && <VirtualCatalog
         pages={pages} total={total} load={load} kind={kind} scrollElement={scrollElement} open={open}
+        albumTracks={Boolean(albumId)} playingTrackId={playingTrackId}
         restoreTop={restoring ? initialTop : undefined} canClampScroll={firstPageSettled} onScrollRestored={finishRestore}
         play={id => play(id, albumId, playlistId)} enqueue={enqueue} inspect={inspect} />}
       {!failure && total === null && <p className="catalog-message" role="status">Loading your library…</p>}
@@ -257,7 +262,7 @@ function pageOffset(index: number) {
   return Math.floor(index / pageSize) * pageSize
 }
 
-function VirtualCatalog({ pages, total, load, kind, scrollElement, open, play, enqueue, inspect, restoreTop, canClampScroll, onScrollRestored }: {
+function VirtualCatalog({ pages, total, load, kind, scrollElement, open, play, enqueue, inspect, albumTracks, playingTrackId, restoreTop, canClampScroll, onScrollRestored }: {
   pages: Map<number, Item[]>
   total: number
   load: (offset: number) => void
@@ -267,6 +272,8 @@ function VirtualCatalog({ pages, total, load, kind, scrollElement, open, play, e
   play: (id: string) => void
   enqueue: (id: string) => void
   inspect?: (id: string) => void
+  albumTracks: boolean
+  playingTrackId?: string
   restoreTop?: number
   canClampScroll: boolean
   onScrollRestored: () => void
@@ -335,7 +342,8 @@ function VirtualCatalog({ pages, total, load, kind, scrollElement, open, play, e
         const item = pages.get(offset)?.[index - offset]
         if (!item) return <div key={index} aria-hidden="true" className={'catalog-placeholder ' + (grid ? 'catalog-placeholder-art' : 'catalog-placeholder-track')} />
         return <div role="listitem" key={item.id}>
-          {'albumId' in item ? <TrackRow item={item} play={play} enqueue={enqueue} inspect={inspect} />
+          {'albumId' in item ? <TrackRow item={item} play={play} enqueue={enqueue} inspect={inspect}
+            albumNumber={albumTracks ? item.number || index + 1 : undefined} playing={albumTracks && item.id === playingTrackId} />
             : 'firstTrackId' in item ? <AlbumCard item={item} open={() => open({ kind: 'album', item })} />
               : <PlaylistCard item={item} open={() => open({ kind: 'playlist', item })} />}
         </div>
@@ -359,15 +367,20 @@ function PlaylistCard({ item, open }: { item: Playlist; open: () => void }) {
   </motion.button>
 }
 
-function TrackRow({ item, play, enqueue, inspect }: {
+function TrackRow({ item, play, enqueue, inspect, albumNumber, playing = false }: {
   item: Track; play: (id: string) => void; enqueue: (id: string) => void; inspect?: (id: string) => void
+  albumNumber?: number; playing?: boolean
 }) {
-  return <div className={'track-row' + (inspect ? ' with-inspector' : '')}>
-    <button className="track-link" onClick={() => play(item.id)} aria-label={'Play ' + item.title}>
-      <Artwork src={item.artwork} preview={item.artworkPreview} />
+  return <div className={['track-row', inspect && 'with-inspector', albumNumber !== undefined && 'album-track-row'].filter(Boolean).join(' ')}
+    data-playing={playing || undefined}>
+    <button className="track-link" onClick={() => play(item.id)} aria-label={'Play ' + item.title} aria-current={playing || undefined}>
+      {albumNumber === undefined ? <Artwork src={item.artwork} preview={item.artworkPreview} />
+        : <span className="album-track-number" aria-hidden="true">{playing
+          ? <span className="track-equalizer"><i /><i /><i /></span>
+          : String(albumNumber).padStart(2, '0')}</span>}
       <span className="min-w-0"><strong>{item.title}</strong><small>{item.artist}</small></span>
     </button>
-    <span className="track-album">{item.album}</span>
+    {albumNumber === undefined && <span className="track-album">{item.album}</span>}
     <time>{timeLabel(item.duration)}</time>
     <button className="icon-button" aria-label={'Add ' + item.title + ' to queue'} title="Add to queue" onClick={() => enqueue(item.id)}><Plus size={16} /></button>
     {inspect && <button className="icon-button" aria-label={'Details for ' + item.title} title="Track details" onClick={() => inspect(item.id)}><Info size={16} /></button>}

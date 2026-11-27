@@ -127,6 +127,8 @@ button:disabled { cursor: default; opacity: 0.45; }
 .carousel-dot::after { content: ""; width: 6px; height: 6px; border-radius: 10px; background: #a5afbd; transition: width .2s, background .2s; }
 .carousel-dot[aria-current]::after { width: 13px; background: var(--signal-accent); }
 .detail-header { margin: 8px 0 25px; }
+.album-detail-header { position: relative; isolation: isolate; }
+.album-detail-header::before { content: ""; position: absolute; inset: -14px 0 -18px -18px; z-index: -1; pointer-events: none; background: radial-gradient(ellipse 57% 52% at 17% 47%, rgb(var(--detail-glow) / .25), transparent 90%); }
 .back-link { color: var(--accent); padding: 4px; border-radius: 6px; margin-bottom: 10px; }
 .detail-identity { display: flex; gap: 19px; align-items: center; }
 .detail-identity > :is(.artwork, .playlist-art) { width: 114px; flex: none; border-radius: 13px; box-shadow: var(--shadow); }
@@ -152,6 +154,15 @@ button:disabled { cursor: default; opacity: 0.45; }
 .discover-album-grid .album-card > .artwork { border-radius: 6px; }
 .track-row { display: grid; grid-template-columns: minmax(100px, 1.45fr) minmax(70px, 1fr) auto 34px; gap: 12px; align-items: center; height: 60px; padding: 0 7px; border-bottom: 1px solid var(--line); }
 .track-row.with-inspector { grid-template-columns: minmax(100px, 1.45fr) minmax(70px, 1fr) auto 34px 34px; }
+.track-row.album-track-row { grid-template-columns: minmax(0, 1fr) auto 34px; }
+.track-row.album-track-row.with-inspector { grid-template-columns: minmax(0, 1fr) auto 34px 34px; }
+.album-track-number { display: grid; place-items: center; width: 32px; flex: none; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.album-track-row[data-playing] .track-link strong { color: var(--signal-accent); }
+.track-equalizer { display: flex; align-items: end; gap: 3px; height: 14px; color: var(--signal-accent); }
+.track-equalizer i { width: 2px; height: 100%; border-radius: 2px; background: currentColor; transform: scaleY(.35); transform-origin: bottom; animation: track-equalizer .84s ease-in-out infinite alternate; }
+.track-equalizer i:nth-child(2) { height: 88%; animation-delay: -.37s; }
+.track-equalizer i:nth-child(3) { height: 76%; animation-delay: -.59s; }
+@keyframes track-equalizer { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
 .track-row:hover, .queue-row:hover { background: var(--hover); border-radius: 8px; }
 .track-row time, .track-album { color: var(--muted); font-size: 13px; }
 .track-link, .queue-current { display: flex; align-items: center; min-width: 0; gap: 10px; text-align: left; border-radius: 7px; }
@@ -172,8 +183,9 @@ button:disabled { cursor: default; opacity: 0.45; }
 .dock { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(115px, 1fr) minmax(124px, 1.65fr) auto; align-items: center; gap: clamp(12px, 1.8vw, 28px); padding: 9px clamp(12px, 2vw, 30px); border-width: 1px 0 0; background: rgb(11 16 24 / 86%); }
 .dock-transport { display: flex; align-items: center; gap: 4px; }
 .dock-track { justify-self: start; display: flex; align-items: center; min-width: 0; max-width: 100%; text-align: left; gap: 10px; border-radius: 8px; }
-.dock-title { display: flex; align-items: center; gap: 7px; }
-.format-badge { flex: none; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--signal-accent) 40%, transparent); border-radius: 5px; font-size: 9px; font-weight: 700; color: var(--signal-accent); white-space: nowrap; }
+.dock-track-text { display: grid; align-content: center; gap: 2px; min-width: 0; line-height: 1.2; }
+.dock-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.format-badge { display: inline-flex; align-items: center; flex: none; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--signal-accent) 40%, transparent); border-radius: 5px; font-size: 9px; font-weight: 700; line-height: 1; color: var(--signal-accent); white-space: nowrap; }
 .dock-art { display: block; width: 49px; flex: none; border-radius: 8px; }
 .dock-art .artwork { border-radius: inherit; }
 .dock-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
@@ -241,10 +253,10 @@ button:disabled { cursor: default; opacity: 0.45; }
 .player-tab-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; padding: 13px; }
 .player-tab-panel:focus-visible { outline-offset: -4px; }
 .lyrics { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.lyrics-scroll { position: relative; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; padding: 0 13px 24vh 13px; }
-.lyric-line { display: block; text-align: left; width: 100%; padding: 10px 0; color: #a3adba; font-size: clamp(21px, 3vw, 39px); letter-spacing: -0.04em; font-weight: 650; line-height: 1.17; transition: color 170ms; }
-.lyric-line:hover, .lyric-line[aria-current] { color: var(--ink); }
-.lyric-line[aria-current] { text-shadow: 0 0 22px color-mix(in srgb, var(--signal-accent) 38%, transparent); }
+.lyrics-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; padding-inline: 13px; }
+.lyrics-scroll:has(.lyric-line) { --lyrics-fade: clamp(18px, 4vh, 42px); padding-block: var(--lyrics-fade) max(24vh, var(--lyrics-fade)); mask-image: linear-gradient(to bottom, transparent, #000 var(--lyrics-fade), #000 calc(100% - var(--lyrics-fade)), transparent); }
+.lyric-line { display: block; text-align: left; width: 100%; padding: 10px 0; color: #fff; opacity: .4; font-size: clamp(21px, 3vw, 39px); letter-spacing: -0.04em; font-weight: 650; line-height: 1.17; transform-origin: left center; transition: opacity .24s ease, transform .3s ease; }
+.lyric-line[aria-current] { opacity: 1; transform: scale(1.025); }
 .lyrics-empty { color: var(--muted); padding: 10px 0; }
 .player-track-info .tool-details { display: block; margin-bottom: 14px; }
 .player-track-info .tool-details > div { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); gap: 12px; padding: 10px; border-bottom: 1px solid var(--line); }
@@ -265,6 +277,8 @@ button:disabled { cursor: default; opacity: 0.45; }
 .full-transport .signal-chain { margin-top: 5px; padding-inline: 11px; box-shadow: 0 0 22px color-mix(in srgb, var(--signal-accent) 18%, transparent); }
 .telemetry { display: grid; gap: 11px; min-width: 0; }
 .signal-plots { display: grid; gap: 7px; min-width: 0; }
+.signal-plots .tool-plot { border: 0; border-radius: 6px; background: linear-gradient(rgb(255 255 255 / 4%), rgb(255 255 255 / 1%)); }
+.signal-plots .tool-plot figcaption { border-top: 1px solid var(--line); }
 .telemetry:not(.telemetry-compact) .signal-plots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .telemetry:not(.telemetry-compact) .signal-plots > :first-child { grid-column: 1 / -1; }
 .telemetry-compact { gap: 7px; }
@@ -276,9 +290,11 @@ button:disabled { cursor: default; opacity: 0.45; }
 .telemetry-meters { display: grid; gap: 4px; }
 .telemetry-meter { display: grid; grid-template-columns: 24px minmax(0, 1fr) 68px; align-items: center; gap: 6px; font-size: 11px; }
 .telemetry-meter small { color: var(--muted); text-align: right; font-size: inherit; font-variant-numeric: tabular-nums; }
+.peak-meter { position: relative; display: flex; align-items: center; }
 .telemetry-meter meter { width: 100%; height: 9px; }
-.telemetry-meter meter::-webkit-meter-bar { border: 0; height: 5px; background: #ffffff19; }
-.telemetry-meter meter::-webkit-meter-optimum-value { background: var(--signal-accent); }
+.telemetry-meter meter::-webkit-meter-bar { border: 0; height: 5px; border-radius: 999px; background: #ffffff19; }
+.telemetry-meter meter::-webkit-meter-optimum-value { border-radius: 999px; background: linear-gradient(90deg, var(--signal-secondary), var(--signal-accent)); }
+.peak-hold { position: absolute; top: 50%; width: 2px; height: 9px; border-radius: 1px; background: var(--signal-accent); box-shadow: 0 0 5px var(--signal-accent); transform: translate(-100%, -50%); transition: left .23s ease-out, opacity .23s ease-out; pointer-events: none; }
 .telemetry-readouts { display: flex; gap: 6px; }
 .telemetry-readouts > div { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: #ffffff07; }
 .telemetry-readouts dt, .signal-status { color: var(--muted); font-size: 11px; }
@@ -324,9 +340,6 @@ button:disabled { cursor: default; opacity: 0.45; }
 .tool-plot { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--base); }
 .tool-plot figcaption { color: var(--muted); padding: 6px 9px 0; font-size: 12px; }
 .tool-plot canvas { display: block; width: 100%; height: 115px; }
-.player-tabs .tool-plot { background: rgb(255 255 255 / 3%); }
-.player-tabs .telemetry-meter meter::-webkit-meter-bar,
-.player-tabs .telemetry-meter meter::-webkit-meter-optimum-value { border-radius: 999px; }
 .player-tabs .telemetry-readouts { gap: 0; border-top: 1px solid var(--line); background: linear-gradient(rgb(255 255 255 / 3%), transparent); }
 .player-tabs .telemetry-readouts > div { padding-block: 8px; border: 0; border-radius: 0; background: transparent; }
 .player-tabs .telemetry-readouts > div + div { border-inline-start: 1px solid var(--line); }
@@ -368,6 +381,8 @@ button:disabled { cursor: default; opacity: 0.45; }
   .discover-sections { grid-template-columns: minmax(0, 1fr); }
   .track-row { grid-template-columns: minmax(0, 1fr) auto 30px; gap: 4px; }
   .track-row.with-inspector { grid-template-columns: minmax(0, 1fr) auto 30px 30px; }
+  .track-row.album-track-row { grid-template-columns: minmax(0, 1fr) auto 30px; }
+  .track-row.album-track-row.with-inspector { grid-template-columns: minmax(0, 1fr) auto 30px 30px; }
   .track-album { display: none; }
 }
 
@@ -386,6 +401,8 @@ button:disabled { cursor: default; opacity: 0.45; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
+  .track-equalizer i { animation: none; }
+  .lyric-line[aria-current] { transform: none; }
 }
 
 @media (forced-colors: active) {
@@ -394,5 +411,6 @@ button:disabled { cursor: default; opacity: 0.45; }
   .range { appearance: auto; }
   .scrubber-rail { display: none; }
   .nav-item[aria-current], .lyric-line[aria-current] { color: Highlight; }
+  .lyrics-scroll:has(.lyric-line) { mask-image: none; }
   .player-tab-list [aria-selected="true"] { border-color: Highlight; }
 }

@@ -45,7 +45,7 @@ export function Dock({ player, notify, expand, active, queueVisible, toggleQueue
     </div>
     <button className="dock-track" onClick={() => expand()} disabled={!state.track} aria-label="Expand Now Playing">
       <motion.span className="dock-art" layoutId="player-cover" transition={spring}><Artwork src={state.track?.artwork} preview={state.track?.artworkPreview} loading="eager" /></motion.span>
-      <span className="min-w-0"><span className="dock-title"><strong>{state.track?.title ?? 'Nothing playing'}</strong>
+      <span className="dock-track-text"><span className="dock-title"><strong>{state.track?.title ?? 'Nothing playing'}</strong>
         {format && <span className="format-badge" title={[format, state.track?.bits ? state.track.bits + '-bit' : '', trackRate(state.track)].filter(Boolean).join(' · ')}>
           {hiRes ? 'HI-RES · ' : ''}{format}</span>}</span><small>{state.track?.artist ?? 'Choose a song to begin'}</small></span>
     </button>
@@ -292,7 +292,7 @@ function PlayerTabs({ player, track, notify, inspect }: { player: Player; track:
     </div>
     <div className="player-tab-panel" id="player-tab-panel" role="tabpanel" aria-labelledby={`player-tab-${current}`} tabIndex={0}>
       {current === 0 && <>
-        <Lyrics player={player} id={id} notify={notify} data={data} error={error} />
+        <Lyrics key={id} player={player} id={id} notify={notify} data={data} error={error} />
         <LyricsSpectrum player={player} />
       </>}
       {current === 1 && <Telemetry player={player} />}
@@ -346,7 +346,7 @@ function Lyrics({ player, id, notify, data, error }: {
     const line = activeLine.current
     const list = scroller.current
     if (!line || !list) return
-    const top = line.offsetTop - list.clientHeight * 0.34
+    const top = line.offsetTop + line.offsetHeight / 2 - list.clientHeight * 0.38
     list.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
   }, [active, data])
 

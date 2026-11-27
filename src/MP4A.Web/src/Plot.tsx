@@ -26,10 +26,15 @@ export function Plot({ label, points, bars = false }: { label: string; points: S
     context.strokeStyle = style.getPropertyValue('--line')
     context.lineWidth = scale
     context.beginPath()
-    context.moveTo(0, height / 2); context.lineTo(width, height / 2)
-    context.moveTo(width / 2, 0); context.lineTo(width / 2, height)
+    if (bars) {
+      context.moveTo(0, height / 3); context.lineTo(width, height / 3)
+      context.moveTo(0, height * 2 / 3); context.lineTo(width, height * 2 / 3)
+    } else {
+      context.moveTo(0, height / 2); context.lineTo(width, height / 2)
+      context.moveTo(width / 2, 0); context.lineTo(width / 2, height)
+    }
     context.stroke()
-    const colors = context.createLinearGradient(0, 0, width, 0)
+    const colors = context.createLinearGradient(0, bars ? height : 0, bars ? 0 : width, 0)
     colors.addColorStop(0, style.getPropertyValue('--signal-accent').trim())
     colors.addColorStop(1, style.getPropertyValue('--signal-secondary').trim())
     for (const { values, horizontal, secondary } of points) {

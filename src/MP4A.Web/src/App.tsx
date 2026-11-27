@@ -43,7 +43,7 @@ export function App({ player }: { player: Player }) {
   const browsePosition = useRef<BrowsePosition | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const restoreFocus = useRef(false)
-  const { track, desktop } = usePlayer(player)
+  const { track, desktop, playing } = usePlayer(player)
   const ambient = useAmbient(track?.artwork)
   const catalogRevision = desktop?.catalogRevision
   const browseScope = route === 'Browse' ? JSON.stringify([query, folder, browseFilterRevision]) : ''
@@ -167,7 +167,7 @@ export function App({ player }: { player: Player }) {
                 transition={{ duration: 0.17 }}>
                 <CatalogView bridge={player.bridge} revision={catalogRevision ?? 0} route={route} query={query} folder={folder} detail={detail} open={setDetail} back={() => setDetail(null)}
                   browsePosition={route === 'Browse' && !detail ? browsePosition : undefined} browseScope={browseScope}
-                  recent={player.recentTracks()}
+                  recent={player.recentTracks()} playingTrackId={playing ? track?.id : undefined}
                   play={(id, albumId, playlistId) => notify(player.send('play', { id, ...(albumId && { albumId }), ...(playlistId && { playlistId }),
                     ...(query && { query }), ...(folder && { folder }) }))}
                   enqueue={id => notify(player.send('enqueue', { id }))}
