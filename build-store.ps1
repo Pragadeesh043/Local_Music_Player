@@ -65,9 +65,14 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE'), (Join-Path $PSScript
 & (Join-Path $PSScriptRoot 'packaging\Copy-Notices.ps1') -Payload $payload -UiDirectory $web -Project $project
 
 Add-Type -AssemblyName System.Drawing
-$source = [Drawing.Image]::FromFile((Join-Path $PSScriptRoot 'src\MP4A.Desktop\Assets\MP4A.png'))
+$source = [Drawing.Image]::FromFile((Join-Path $web 'public\brand.png'))
 try {
-    $logos = @{ 'StoreLogo.png' = 50; 'Square44x44Logo.png' = 44; 'Square150x150Logo.png' = 150 }
+    $logos = @{
+        (Join-Path $payload 'Assets\StoreLogo.png') = 50
+        (Join-Path $payload 'Assets\Square44x44Logo.png') = 44
+        (Join-Path $payload 'Assets\Square150x150Logo.png') = 150
+        (Join-Path $buildDirectory 'MP4A-Store-Tile-300.png') = 300
+    }
     foreach ($logo in $logos.GetEnumerator()) {
         $size = $logo.Value
         $scale = $size / [Math]::Max($source.Width, $source.Height)
@@ -78,7 +83,7 @@ try {
         try {
             $graphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
             $graphics.DrawImage($source, [int](($size - $width) / 2), [int](($size - $height) / 2), $width, $height)
-            $bitmap.Save((Join-Path $payload "Assets\$($logo.Key)"), [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Save($logo.Key, [Drawing.Imaging.ImageFormat]::Png)
         }
         finally {
             $graphics.Dispose()
@@ -96,6 +101,7 @@ $stagedPackage = Join-Path $buildDirectory $packageName
 Invoke-BuildTool $MakeAppx @('pack', '/d', $payload, '/p', $stagedPackage)
 $package = Join-Path $output $packageName
 Move-Item -LiteralPath $stagedPackage -Destination $package -Force
+Move-Item -LiteralPath (Join-Path $buildDirectory 'MP4A-Store-Tile-300.png') -Destination $output -Force
 $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  $packageName" | Set-Content -LiteralPath "$package.sha256" -Encoding ascii
 Write-Output $package
