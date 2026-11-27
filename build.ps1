@@ -4,7 +4,8 @@ param(
     [string] $Configuration = 'Release',
     [switch] $NoRestore,
     [switch] $Installer,
-    [string] $OutputDirectory
+    [string] $OutputDirectory,
+    [string] $FFmpegDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,11 @@ $env:DOTNET_CLI_HOME = $PSScriptRoot
 $env:NUGET_PACKAGES = Join-Path $PSScriptRoot '.nuget\packages'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+$ffmpegArguments = @()
+if ($FFmpegDirectory) {
+    $ffmpegPath = (Resolve-Path -LiteralPath $FFmpegDirectory).Path
+    $ffmpegArguments += "-p:FFmpegDirectory=$ffmpegPath"
+}
 
 $web = Join-Path $PSScriptRoot 'src\MP4A.Web'
 Push-Location $web
@@ -34,8 +40,9 @@ if ($Installer) {
     $compiler = if (Test-Path -LiteralPath $localCompiler -PathType Leaf) { $localCompiler } else { (Get-Command makensis.exe).Source }
     $buildFolder = Join-Path $PSScriptRoot ('.verify\installer-' + [guid]::NewGuid().ToString('N'))
     $payload = Join-Path $buildFolder 'payload'
-    $setup = Join-Path $PSScriptRoot 'artifacts\MP4A-Setup-x64.exe'
-    $buildOptions = @('-r', 'win-x64', '--self-contained', 'true', '-p:DebugType=embedded', '-p:RequireFFmpeg=true')
+    $setupDirectory = if ($OutputDirectory) { $output } else { Join-Path $PSScriptRoot 'artifacts' }
+    $setup = Join-Path $setupDirectory 'MP4A-Setup-x64.exe'
+    $buildOptions = @('-r', 'win-x64', '--self-contained', 'true', '-p:DebugType=embedded', '-p:RequireFFmpeg=true') + $ffmpegArguments
     if ($NoRestore) { $buildOptions += '--no-restore' }
     try {
         New-Item -ItemType Directory -Path $buildFolder -Force | Out-Null
@@ -85,7 +92,7 @@ if (!$NoRestore) {
     & $dotnet restore $project
     if ($LASTEXITCODE -ne 0) { throw "Restore failed with exit code $LASTEXITCODE." }
 }
-& $dotnet build $project -c $Configuration --no-restore -o $output
+& $dotnet build $project -c $Configuration --no-restore -o $output @ffmpegArguments
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE." }
 $sacd = Join-Path $PSScriptRoot '.tools\sacd\sacd_extract.exe'
 if (Test-Path -LiteralPath $sacd -PathType Leaf) {

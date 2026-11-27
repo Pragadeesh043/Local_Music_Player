@@ -2,7 +2,7 @@
 
 ## GitHub
 
-1. Build the x64 installer with `./build-app.ps1`. Check the installer, checksum, and [third-party notices](../THIRD-PARTY-NOTICES.md).
+1. Build the x64 installer with `./build.ps1 -Installer -OutputDirectory <output> -FFmpegDirectory <path-to-extracted-Tools/FFmpeg>`. Use the checksum-verified FFmpeg input from the release kit. Check the installer, checksum, and [third-party notices](../THIRD-PARTY-NOTICES.md).
 2. Verify clean install and upgrade in an isolated Windows profile. Check the library, playback, and app icon. Silent install uses the NSIS `/S` switch.
 3. Choose the version and tag for the release. Attach `MP4A-Setup-x64.exe` and its SHA-256 checksum to the matching GitHub release. Mention the WebView2 prerequisite and bundled FFmpeg build in the release description.
 4. Review repository history before making it public. Earlier commits contain a SACD helper binary that was removed from current source. Review those commits and their distribution terms before exposing that history.

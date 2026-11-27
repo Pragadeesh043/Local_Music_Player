@@ -12,7 +12,7 @@ Live meters, the FFT, and the phase scope run while the live signal view is open
 
 If the ring runs dry, processed playback reports the underrun and supplies silence until audio is available. Direct PCM and DSD stop and report the underrun to preserve the integrity of the stream.
 
-If the next track cannot finish preloading within the available audio buffer, Soundroom finishes delivering the current track and opens the next track separately. Changing the queue order during playback discards superseded audio at the next track boundary.
+If the next track cannot finish preloading within the available audio buffer, MP4A finishes delivering the current track and opens the next track separately. Changing the queue order during playback discards superseded audio at the next track boundary.
 
 ## Artwork
 
@@ -73,6 +73,6 @@ Generated fixtures verified exclusive 16-bit/44.1 kHz and 24-bit/96 kHz output o
 
 The FFmpeg test corpus verified PCM decoding from sample APE, TAK, Musepack SV7 and SV8 files. Adapted synthetic SACD images verified stereo DSD and stereo/5.1 DST extraction, PCM decoding, and DoP marker packing. End-to-end native DSD and DoP lock still need a compatible DAC. Commercial SACD image verification still needs a real disc image.
 
-The true-peak meter passed the published tolerances for EBU Tech 3341 sequences 15–23. With the limiter set to −1 dBTP, the loudest of those limited sequences measured −1.60 dBTP in Soundroom. Exclusive PCM, binaural and HeSuVi routes each completed silent playback test tracks with zero underruns during metadata probing.
+The true-peak meter passed the published tolerances for EBU Tech 3341 sequences 15–23. With the limiter set to −1 dBTP, the loudest of those limited sequences measured −1.60 dBTP in MP4A. Exclusive PCM, binaural and HeSuVi routes each completed silent playback test tracks with zero underruns during metadata probing.
 
 An isolated desktop build rendered the first page of an indexed 100,000-track fixture in 1.69–2.19 seconds across three launches. The working set five seconds after the first page rendered was 189–192 MiB. Both measurements exceed the 500 ms startup and 150 MB idle targets. A separate 512-file scan against the same size catalog overlapped 96 kHz exclusive playback with zero underruns. A forced low-reserve test verified that scanning pauses and resumes.

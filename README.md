@@ -1,33 +1,37 @@
 # MP4A
 
-MP4A is a local music player for Windows 11 x64. It combines a WinUI 3 desktop host and a WebView2 library with a native audio engine built for headphone listening, DSP, and inspecting the signal sent to your audio device.
+A local music player for Windows 11 x64 with headphone DSP, flexible audio output, and a live view of the playback signal.
 
-## Get started
+[Download for Windows](https://github.com/Pragadeesh043/MP4A/releases/latest) · [Report an issue](https://github.com/Pragadeesh043/MP4A/issues) · [Privacy policy](PRIVACY.md)
 
-1. Run `MP4A-Setup-x64.exe` from the release assets. A local installer build is written to `artifacts/MP4A-Setup-x64.exe`.
-2. Open MP4A and choose **Watch folder** for an existing music collection or **Add files** for individual tracks. If MP4A prompts for WebView2, install the [Evergreen Runtime](https://developer.microsoft.com/microsoft-edge/webview2/#download-section) and select **Reload Glassroom**.
+![MP4A album browser and live signal panel](screenshots/album-browse.png)
 
-The installer includes FFmpeg and ffprobe. If they are missing from a development or older install, use **Set up FFmpeg** to select an existing `bin` folder containing both executables. MP4A also accepts the tools in `%LOCALAPPDATA%\MP4A\Tools\FFmpeg` or on PATH. [FFmpeg downloads](https://ffmpeg.org/download.html#build-windows)
+## Features
 
-For SACD ISO imports, obtain the upstream Windows x64 [sacd_extract helper](https://github.com/EuFlo/sacd-ripper/releases/tag/0.3.9.3b) and place `sacd_extract.exe` in the installed app’s `Tools\SACD` folder or on PATH. The installer bundles the .NET and Windows App SDK runtimes.
+- **Local library** — Watch music folders or add individual files. Browse albums, search your collection, and create playlists. Your music stays in its original folders.
+- **Headphone DSP** — Use 10-band graphic EQ, parametric EQ, V, M, W, and U curves, crossfeed, FIR convolution, normalization, and limiting. Save your own presets.
+- **Windows audio output** — Choose shared output, binaural playback, WASAPI exclusive PCM, or device-dependent DoP and native DSD via ASIO. Gapless playback is available across compatible tracks.
+- **Signal inspection** — See the waveform, spectrum, loudness, true peak, and output path while music plays.
 
-## Listening and library
+## Install and play
 
-- Choose a Windows output and route in **Output settings**. MP4A supports shared output, WASAPI exclusive PCM, binaural headphone playback, and device-dependent DoP and native DSD via ASIO.
-- Use **DSP** for EQ, crossfeed, FIR convolution, resampling, normalization, and limiting. **Inspect signal** shows the active processing, meters, and device format.
-- Browse your SQLite library by album or folder, search the full collection, and use smart playlists and shuffle. Gapless playback applies across compatible tracks. Windows Now Playing exposes transport controls and track metadata.
-- Watched folders keep their library entries, ratings, and play counts while disconnected. **Reindex library** refreshes connected folders and hides files that have been deleted.
-- Press **Ctrl+K** to focus search and **F11** for full screen. Launch with `--acrylic` to use Desktop Acrylic in place of Mica.
+1. Download and run **MP4A-Setup-x64.exe** from [Releases](https://github.com/Pragadeesh043/MP4A/releases). The GitHub installer is unsigned.
+2. Open MP4A and choose **Watch folder** or **Add files**. If prompted, install the Microsoft Edge WebView2 Evergreen Runtime and select **Reload Glassroom**. [WebView2 download](https://developer.microsoft.com/microsoft-edge/webview2/#download-section)
+3. Open **DSP → 10-band graphic EQ** to select a curve, then click **Apply DSP**.
 
-MP4A plays files where they are and stores settings, its SQLite catalog, artwork thumbnails, and logs in `%LOCALAPPDATA%\Soundroom`. Playback and indexing run locally. Before sharing logs, remove personal folder paths and track names.
+The installer bundles FFmpeg, FFprobe, .NET, and the Windows App SDK runtime. SACD ISO import requires the optional [sacd_extract helper](https://github.com/EuFlo/sacd-ripper/releases/tag/0.3.9.3b). Use **Settings → Apps → Installed apps** to uninstall MP4A.
 
-## Project
+## Screenshots
 
-To remove MP4A, open **Settings → Apps → Installed apps**, select **MP4A**, and choose **Uninstall**. The uninstaller removes setup-managed files and keeps your music, library data, ratings, and settings.
+| Live signal | Track details | Synchronized lyrics |
+| --- | --- | --- |
+| ![Waveform, spectrum, and live levels](screenshots/now-playing-signal.png) | ![Track format and metadata](screenshots/now-playing-track-info.png) | ![Synchronized lyrics in Now Playing](screenshots/now-playing-lyrics.png) |
+
+## Project documentation
 
 - [Build and contribute](docs/development.md)
-- [GitHub and Microsoft Store release checklist](docs/release.md)
 - [Audio modes, DSP, and verification](docs/audio.md)
-- [Third-party notices](THIRD-PARTY-NOTICES.md)
+- [Release checklist](docs/release.md)
+- [Third-party notices](THIRD-PARTY-NOTICES.md) and [FFmpeg source archive](https://github.com/Pragadeesh043/MP4A/releases/download/v1.0.1/MP4A-FFmpeg-8.0.3-win64-source.tar.gz)
 
-MP4A’s original source and documentation are available under the [MIT license](LICENSE). Third-party components retain their own licenses.
+MP4A is available under the [MIT license](LICENSE). Third-party components retain their own licenses.
