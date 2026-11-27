@@ -10,6 +10,14 @@
 
 ## Microsoft Store
 
+Build the x64 Store package with `./build-store.ps1 -OutputDirectory .verify/store`. The script uses MakeAppx from the restored Windows SDK BuildTools package or accepts a path through `-MakeAppx`. It outputs an MSIX and SHA-256 checksum.
+
+- Confirm the package identity and version in `packaging/AppxManifest.xml` against Partner Center. Test a locally signed copy on a clean Windows profile with WebView2, and run the Windows App Certification Kit. Upload the original Store package through Partner Center. [MSIX readiness checklist](https://learn.microsoft.com/en-us/windows/apps/publish/store-readiness-checklist)
+- Prepare the listing, privacy policy URL, and full-trust capability explanation. Declare WebView2 and verify the bundled FFmpeg distribution requirements from the release checklist above.
+- The Store package includes the SACD helper's upstream instructions. SACD ISO import requires a separately obtained helper on PATH.
+
+### EXE submission
+
 For an EXE submission, use Partner Center to submit a direct, versioned HTTPS URL for the installer. The URL must serve the same bytes for that version. Microsoft requires an offline installer with silent install support and trusted code signatures for the installer and its executable payload. [Microsoft Store EXE requirements](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msi/app-package-requirements)
 
 - Audit the installed payload signatures, including bundled third-party binaries, and arrange code signing before submission. Generate the release checksum after signing.
