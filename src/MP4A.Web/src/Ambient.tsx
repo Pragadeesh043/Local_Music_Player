@@ -76,8 +76,8 @@ export function useAmbient(artwork?: string) {
   return artwork ? layer : defaultLayer
 }
 
-export function Ambient({ layer, cover = false }: { layer: typeof defaultLayer; cover?: boolean }) {
-  return <div className={cover ? 'ambient cover-ambient' : 'ambient'} aria-hidden="true">
+export function Ambient({ layer }: { layer: typeof defaultLayer }) {
+  return <div className="ambient" aria-hidden="true">
     <AnimatePresence initial={false}>
       <AmbientLayer key={layer.source} colors={layer.colors} />
     </AnimatePresence>

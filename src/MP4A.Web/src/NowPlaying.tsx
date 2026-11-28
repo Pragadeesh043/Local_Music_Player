@@ -255,7 +255,7 @@ export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueue
     </header>
     <div className="full-content">
       <div className="full-transport">
-        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Ambient layer={ambient} cover /><Artwork src={track?.artwork} preview={track?.artworkPreview} loading="eager" /></motion.div>
+        <motion.div className="full-art" layoutId="player-cover" transition={spring}><Artwork src={track?.artwork} preview={track?.artworkPreview} loading="eager" /></motion.div>
         <div className="full-title"><h1>{track?.title ?? 'Nothing playing'}</h1><p>{track?.artist}</p></div>
         <Scrubber key={track?.id} player={player} notify={notify} />
         <Transport player={player} notify={notify} />
