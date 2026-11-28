@@ -14,6 +14,7 @@ export type Track = {
   number: number
   codec?: string
   rate?: number
+  sourceRate?: number
   bits?: number
   channels?: number
   bitRate?: number
@@ -44,7 +45,7 @@ export type Playback = {
   queueIndex: number
   liveSignal?: boolean
   desktop?: { status: string; volumeEnabled: boolean; catalogRevision: number; output: string; shuffled: boolean; fullscreen?: boolean
-    signalPath?: { mode: string; dsp: boolean } | null; mediaToolsAvailable?: boolean }
+    signalPath?: { mode: string; dsp: boolean; pcmRate?: number | null } | null; mediaToolsAvailable?: boolean }
 }
 
 export type LibraryQuery = {

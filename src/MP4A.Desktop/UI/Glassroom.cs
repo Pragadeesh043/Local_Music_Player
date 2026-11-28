@@ -22,11 +22,11 @@ public sealed partial class MainWindow
     private WebStatus? publishedWebStatus;
     private int webCatalogRevision;
 
-    private sealed record WebSignalPath(string Mode, bool Dsp);
+    private sealed record WebSignalPath(string Mode, bool Dsp, int? PcmRate);
     private sealed record WebStatus(string? Key, bool Playing, bool Pausing, double Volume, bool VolumeEnabled, string Status,
         int CatalogRevision, string Output, bool Shuffled, bool Fullscreen, WebSignalPath? SignalPath, bool MediaToolsAvailable);
     private sealed record WebTrack(string Id, string Title, string Artist, string AlbumId, string Album,
-        string? Artwork, double Duration, int Number, string Codec, int Rate, int Bits, int Channels, long BitRate, string? ArtworkPreview);
+        string? Artwork, double Duration, int Number, string Codec, int Rate, int SourceRate, int Bits, int Channels, long BitRate, string? ArtworkPreview);
 
     private async void InitializeGlassroom()
     {
@@ -171,6 +171,8 @@ public sealed partial class MainWindow
         {
             if (!ready || id <= 0)
                 return;
+            if (error is FFmpegFailure)
+                Diagnostics.Write("Handling the player command", error);
             string detail = error is InvalidOperationException or IOException
                 ? error.Message : Diagnostics.Report("Handling the player command", error);
             PostGlassroom(new { v = 1, id, ok = false, error = detail });

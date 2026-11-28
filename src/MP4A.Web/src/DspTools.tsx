@@ -1,17 +1,11 @@
 import { Plus, Trash2 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plot } from './Plot'
 import type { Dsp, DspAction, DspView, EqBand } from './desktop'
 import { Player, useResource } from './player'
 
 const shapes = ['Peak', 'Low shelf', 'High shelf', 'Low pass', 'High pass', 'Notch', 'Band pass', 'All pass']
 const centers = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-const curves = {
-  V: [4, 3, 2, 0, -2, -3, -2, 0, 2, 4],
-  M: [-2, 0, 3, 2, 0, -2, 0, 3, 2, -2],
-  W: [4, 3, 0, -2, 0, 3, 0, -2, 2, 4],
-  U: [3, 3, 2, 0, -1, -1, -1, 0, 2, 3],
-}
 const levels = [
   ['Preamp (dB)', 'preamp', -24, 6, .5], ['Bass shelf (dB)', 'bass', -12, 12, .5],
   ['Stereo width (%)', 'width', 0, 200, 1], ['Crossfeed (%)', 'crossfeed', 0, 100, 1],
@@ -35,9 +29,22 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
   const [preset, setPreset] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [preview, setPreview] = useState<{ draft: Dsp; response: DspView }>()
   const modified = JSON.stringify(draft) !== JSON.stringify(view.settings)
-  const selectedCurve = Object.entries(curves).find(([, gains]) =>
-    gains.every((gain, index) => gain === draft.graphic[index]))?.[0] ?? ''
+  const selectedCurve = view.curvePresets?.find(curve => curve.id === draft.graphicPreset ||
+    (curve.isFlat && draft.graphic.every(gain => gain === 0)))
+  const response = modified && preview?.draft === draft ? preview.response : view
+
+  useEffect(() => {
+    if (!modified || busy) return
+    let current = true
+    const timer = window.setTimeout(() => {
+      void player.bridge.request('editDsp', { action: 'preview', settings: draft }).then(result => {
+        if (current) setPreview({ draft, response: result })
+      }, () => {})
+    }, 90)
+    return () => { current = false; clearTimeout(timer) }
+  }, [draft, modified, busy, player])
 
   function update<K extends keyof Dsp>(key: K, value: Dsp[K]) {
     setDraft(current => ({ ...current, [key]: value }))
@@ -76,8 +83,8 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
     setMessage(`${input.getAttribute('aria-label')}: ${input.validationMessage}`)
   }}>
     <Plot label="Left and right EQ response" points={[
-      { values: view.right.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72), secondary: true },
-      { values: view.left.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72) },
+      { values: response.right.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72), secondary: true },
+      { values: response.left.map(value => (36 - Math.max(-36, Math.min(36, value))) / 72) },
     ]} />
     <fieldset className="tool-form" disabled={busy}>
       <section className="tool-card">
@@ -117,17 +124,24 @@ function DspForm({ initial, player }: { initial: DspView; player: Player }) {
         </div>
       </details>
       <details><summary>10-band graphic EQ</summary><div className="tool-fields tool-section">
-        <label>Curve preset<select value={draft.enabled ? selectedCurve : ''} onChange={event => {
-          const curve = event.target.value as keyof typeof curves
-          setDraft(current => ({ ...current, enabled: true, graphic: [...curves[curve]] }))
+        <label>Curve preset<select value={selectedCurve?.id ?? ''} onChange={event => {
+          const curve = view.curvePresets?.find(curve => curve.id === event.target.value)
+          if (!curve) return
+          setDraft(current => ({ ...current, enabled: curve.isFlat ? current.enabled : true,
+            graphic: [...curve.gains], graphicPreset: curve.isFlat ? null : curve.id }))
           setMessage('')
         }}>
-          <option value="" disabled>Choose a curve</option>
-          {Object.keys(curves).map(curve => <option key={curve}>{curve}</option>)}
+          <option value="" disabled>Custom</option>
+          {view.curvePresets?.map(curve => <option key={curve.id} value={curve.id}>{curve.label}</option>)}
         </select></label>
+        {selectedCurve && !selectedCurve.isFlat && <small>Preset trim {selectedCurve.trimDb.toFixed(1)} dB · Peak protection
+          {selectedCurve.telephone && ' · 300 Hz–3.4 kHz bandpass'}</small>}
         {centers.map((frequency, i) => <label key={frequency}>{frequency} Hz · {draft.graphic[i].toFixed(1)} dB
-          <input type="range" min={-12} max={12} step={.5} value={draft.graphic[i]} onChange={event =>
-            update('graphic', draft.graphic.map((value, index) => i === index ? Number(event.target.value) : value))} /></label>)}
+          <input type="range" min={-12} max={12} step={.5} value={draft.graphic[i]} onChange={event => {
+            setDraft({ ...draft, graphicPreset: null,
+              graphic: draft.graphic.map((value, index) => i === index ? Number(event.target.value) : value) })
+            setMessage('')
+          }} /></label>)}
       </div></details>
       <section className="tool-card">
         <h3>FIR convolution</h3>

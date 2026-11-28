@@ -32,9 +32,16 @@ export type Dsp = {
   enabled: boolean; preamp: number; bass: number; width: number; crossfeed: number; balance: number
   invert: boolean; dither: number; normalization: number; headroom: number; limiter: boolean
   parametric: EqBand[]; graphic: number[]
+  graphicPreset?: string | null
 }
-export type DspView = { settings: Dsp; impulse: string | null; presets: string[]; left: number[]; right: number[]; bypassed: boolean }
-export type DspAction = 'apply' | 'reset' | 'load' | 'save' | 'autoeq' | 'impulse' | 'clearImpulse'
+export type GraphicEqPreset = {
+  id: string; label: string; gains: number[]; trimDb: number; isFlat: boolean; telephone: boolean
+}
+export type DspView = {
+  settings: Dsp; impulse: string | null; presets: string[]; curvePresets: GraphicEqPreset[]
+  left: number[]; right: number[]; bypassed: boolean
+}
+export type DspAction = 'preview' | 'apply' | 'reset' | 'load' | 'save' | 'autoeq' | 'impulse' | 'clearImpulse'
 export type Meter = { peak: number; rms: number; clips: number }
 export type LiveSignal = {
   trackId?: string

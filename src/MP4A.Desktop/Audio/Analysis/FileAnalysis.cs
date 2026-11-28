@@ -106,7 +106,7 @@ internal static partial class FileAnalysis
         await proc.WaitForExitAsync();
         string result = await error;
         if (proc.ExitCode != 0)
-            throw new IOException(result.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim());
+            throw new FFmpegFailure(proc.StartInfo.FileName, proc.ExitCode, result, tracks.Length == 1 ? tracks[0] : null);
         return result;
     }
 

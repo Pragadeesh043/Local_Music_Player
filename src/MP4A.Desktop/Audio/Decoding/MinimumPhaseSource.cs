@@ -16,7 +16,7 @@ internal sealed class MinimumPhaseSource : IDecodedSource
     private int bytesRead, blockPosition, ring;
     private long inputIndex = -1, clock;
 
-    public MinimumPhaseSource(Track track, double offset, int outputRate, bool steep)
+    public MinimumPhaseSource(Track track, double offset, int outputRate, bool steep, double inputGain = 1)
     {
         channels = track.Channels;
         from = track.Rate;
@@ -24,7 +24,7 @@ internal sealed class MinimumPhaseSource : IDecodedSource
         kernel = Kernels.GetOrAdd((from, to, steep), static key => Prepare(key.Item1, key.Item2, key.Item3));
         history = new double[channels * Taps];
         block = new byte[512 * channels * sizeof(double)];
-        decoder = new PcmDecoder(track, offset, from, "f64le");
+        decoder = new PcmDecoder(track, offset, from, "f64le", inputGain: inputGain);
     }
 
     private static double[][] Prepare(int from, int to, bool steep)

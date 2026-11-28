@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -87,7 +88,7 @@ internal sealed class Playback : IWaveProvider, IDisposable
             throw new InvalidOperationException("Select a DSD-capable ASIO driver in Output settings.") : null;
         exclusive = route is Route.Exclusive or Route.ExclusiveDsp or Route.Dop or Route.NativeDsd;
         dop = route is Route.Dop or Route.NativeDsd;
-        rate = dop ? DsdReader.CarrierRate(track) : route switch
+        rate = dop ? DsdReader.CarrierRate(track, nativeAsio: route == Route.NativeDsd) : route switch
         {
             Route.Exclusive => track.Rate,
             Route.ExclusiveDsp => options.TargetRate > 0 ? options.TargetRate : track.Rate,
@@ -236,7 +237,10 @@ internal sealed class Playback : IWaveProvider, IDisposable
 
     private void OutputStopped(object? sender, StoppedEventArgs args)
     {
-        var error = args.Exception ?? (Volatile.Read(ref endedForOrder) == 0 ? Volatile.Read(ref decoderFailure) : null);
+        var failure = Volatile.Read(ref decoderFailure);
+        if (failure is FFmpegFailure { Track: { } failed } && failed.Key != CurrentTrack.Key && canAdvance?.Invoke() == false)
+            failure = null;
+        var error = args.Exception ?? (Volatile.Read(ref endedForOrder) == 0 ? failure : null);
         if (error is null && IsRaw && Underruns > 0)
             error = new IOException("The source stopped supplying audio in time. Press Play to resume.");
         Stopped?.Invoke(this, error is null ? args : new StoppedEventArgs(error));
@@ -362,6 +366,9 @@ internal sealed class Playback : IWaveProvider, IDisposable
                 if (queue.Queued >= startupBlocks)
                     primed.TrySetResult();
             }
+            // Binaural tail rendering can finish without reading the source again.
+            if (decoder.ReadFailure is { } failure)
+                ExceptionDispatchInfo.Throw(failure);
         }
         catch (Exception error)
         {

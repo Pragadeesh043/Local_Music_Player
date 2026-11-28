@@ -1,6 +1,6 @@
-import { Compass, Disc3, FilePlus2, FolderOpen, LibraryBig, ListFilter, ListMusic, RefreshCw, Search, X } from 'lucide-react'
+import { Compass, Disc3, FilePlus2, FolderOpen, Keyboard, LibraryBig, ListFilter, ListMusic, RefreshCw, Search, X } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from 'motion/react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Ambient, useAmbient } from './Ambient'
 import type { DesktopAction } from './bridge'
@@ -8,6 +8,7 @@ import { CatalogView } from './Library'
 import type { BrowsePosition, Detail, Route } from './Library'
 import { LibraryTools } from './LibraryTools'
 import { DspTools } from './DspTools'
+import { handlePlaybackShortcut, keyboardShortcuts } from './keyboardShortcuts'
 import { FileTools } from './FileTools'
 import { OutputSettings } from './OutputSettings'
 import { SignalTools } from './SignalTools'
@@ -22,7 +23,7 @@ const navigation = [
   { title: 'Library', Icon: LibraryBig },
   { title: 'Playlists', Icon: ListMusic },
 ] as const
-type Tool = AudioTool | 'Library tools' | 'Track details'
+type Tool = AudioTool | 'Library tools' | 'Track details' | 'Keyboard shortcuts'
 const queueRailMedia = '(min-width: 1160px)'
 
 export function App({ player }: { player: Player }) {
@@ -89,6 +90,38 @@ export function App({ player }: { player: Player }) {
     }
   }, [expanded])
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.isComposing || tool) return
+      const host = player.snapshot().desktop
+      if (host && event.key === 'F11') {
+        event.preventDefault()
+        if (!event.repeat) notify(player.send('desktop', { action: 'fullscreen' }))
+        return
+      }
+      if (!expanded && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        searchInput.current?.focus()
+        return
+      }
+      if (event.key === 'Escape' && !expanded) {
+        const target = event.target instanceof Element ? event.target : null
+        if (target?.closest('.queue-rail') && wide && showRail) {
+          event.preventDefault()
+          document.querySelector<HTMLButtonElement>('.dock [aria-label="Hide queue"]')?.focus()
+          setShowRail(false)
+        } else if (host?.fullscreen && !target?.closest('input, textarea, select, [contenteditable]')) {
+          event.preventDefault()
+          if (!event.repeat) notify(player.send('desktop', { action: 'fullscreen' }))
+        }
+        return
+      }
+      handlePlaybackShortcut(event, player, notify)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [player, notify, tool, expanded, wide, showRail])
+
   function navigate(next: Route) {
     setDetail(null)
     setSearch('')
@@ -110,17 +143,7 @@ export function App({ player }: { player: Player }) {
 
   return <MotionConfig reducedMotion="user">
     <LayoutGroup>
-      <div className="app-shell" style={{ '--album-primary': ambient.colors[0], '--album-secondary': ambient.colors[1] } as CSSProperties} onKeyDown={event => {
-        if (desktop && (event.key === 'F11' || (desktop.fullscreen && event.key === 'Escape' &&
-          !expanded && !tool && event.target !== searchInput.current))) {
-          event.preventDefault()
-          desktopAction('fullscreen')
-        }
-        if (!expanded && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-          event.preventDefault()
-          searchInput.current?.focus()
-        }
-      }}>
+      <div className="app-shell" style={{ '--album-primary': ambient.colors[0], '--album-secondary': ambient.colors[1] } as CSSProperties}>
         <Ambient layer={ambient} />
         <div className="workspace" inert={expanded} aria-hidden={expanded || undefined} data-queue-rail={wide && showRail}>
           <aside className="sidebar" aria-label="Music navigation">
@@ -148,6 +171,7 @@ export function App({ player }: { player: Player }) {
               <button className="nav-item" title="Watch folder" onClick={() => desktopAction('watchFolder')}><FolderOpen size={19} /><span>Watch folder</span></button>
               <button className="nav-item" title="Reindex library" onClick={() => desktopAction('reindex')}><RefreshCw size={19} /><span>Reindex library</span></button>
               <button className="nav-item" title="Library tools" onClick={() => setTool('Library tools')}><ListFilter size={19} /><span>Library tools</span></button>
+              <button className="nav-item" title="Keyboard shortcuts" onClick={() => setTool('Keyboard shortcuts')}><Keyboard size={19} /><span>Keyboard shortcuts</span></button>
               <div className="desktop-output" title={desktop.output}>{desktop.output}</div>
             </nav>}
           </aside>
@@ -157,7 +181,13 @@ export function App({ player }: { player: Player }) {
                 <Search size={17} aria-hidden="true" />
                 <input ref={searchInput} type="search" value={search} placeholder="Search this view" aria-label="Search this view"
                   onChange={event => { setDetail(null); setSearch(event.target.value) }}
-                  onKeyDown={event => { if (event.key === 'Escape') { setSearch(''); setQuery('') } }} />
+                  onKeyDown={event => {
+                    if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+                      event.preventDefault()
+                      setSearch('')
+                      setQuery('')
+                    }
+                  }} />
                 {search ? <IconButton label="Clear search" action={() => { setSearch(''); setQuery(''); searchInput.current?.focus() }}><X size={15} /></IconButton> : <kbd>Ctrl K</kbd>}
               </div>
             </header>
@@ -192,6 +222,9 @@ export function App({ player }: { player: Player }) {
           {tool === 'DSP' && <DspTools player={player} />}
           {tool === 'Signal inspector' && <SignalTools player={player} />}
           {tool === 'Track details' && <FileTools player={player} id={fileId} />}
+          {tool === 'Keyboard shortcuts' && <dl className="tool-details tool-card">
+            {keyboardShortcuts.map(([keys, action]) => <Fragment key={keys}><dt><kbd>{keys}</kbd></dt><dd>{action}</dd></Fragment>)}
+          </dl>}
         </ToolDialog>}
         {error && <div className="toast glass" role="alert">{error}<IconButton label="Dismiss error" action={() => setError('')}><X size={17} /></IconButton></div>}
       </div>

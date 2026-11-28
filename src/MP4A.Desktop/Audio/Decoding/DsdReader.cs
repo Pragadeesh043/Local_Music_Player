@@ -14,10 +14,10 @@ internal sealed class DsdReader : IDecodedSource
     private long frame, cached = -1;
     private bool canceled;
 
-    public static int CarrierRate(Track track)
+    public static int CarrierRate(Track track, bool nativeAsio = false)
     {
         if (track.Bits != 1 || !track.Codec.StartsWith("dsd_", StringComparison.Ordinal))
-            throw new NotSupportedException("DoP requires a DSD stream in a DSF or uncompressed DSDIFF file.");
+            throw new NotSupportedException($"{(nativeAsio ? "Native ASIO DSD" : "DoP")} requires a DSD stream in a DSF or uncompressed DSDIFF file.");
         // FFmpeg expresses DSD sample rate in groups of eight one-bit samples.
         return track.Rate / 2;
     }

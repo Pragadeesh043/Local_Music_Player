@@ -56,11 +56,7 @@ foreach ($file in 'MP4A.exe', 'MP4A.pri', 'App.xbf', 'UI\MainWindow.xbf', 'corec
         throw "Store payload is missing $file."
     }
 }
-foreach ($tool in 'ffmpeg', 'ffprobe') {
-    $ffmpegDirectory = Join-Path $payload 'Tools\FFmpeg'
-    Invoke-BuildTool (Join-Path $ffmpegDirectory "$tool.exe") @('-version') |
-        Set-Content -LiteralPath (Join-Path $ffmpegDirectory "$tool-build.txt") -Encoding utf8
-}
+& (Join-Path $PSScriptRoot 'packaging\Test-FFmpeg.ps1') -Directory (Join-Path $payload 'Tools\FFmpeg') -WriteBuildInfo
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE'), (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.md') -Destination $payload
 & (Join-Path $PSScriptRoot 'packaging\Copy-Notices.ps1') -Payload $payload -UiDirectory $web -Project $project
 

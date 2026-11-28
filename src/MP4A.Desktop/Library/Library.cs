@@ -55,9 +55,9 @@ internal static class Media
     public static string UserFFmpegFolder { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MP4A", "Tools", "FFmpeg");
 
-    public static bool HasFFmpeg => ResolveFFmpeg("ffmpeg.exe") is not null && ResolveFFmpeg("ffprobe.exe") is not null;
+    public static bool HasFFmpeg => ResolveFFmpegFolder() is not null;
 
-    private static string? ResolveFFmpeg(string executable)
+    private static string? ResolveFFmpegFolder()
     {
         var locations = new[] { Path.Combine(AppContext.BaseDirectory, "Tools", "FFmpeg"), FFmpegFolder, UserFFmpegFolder };
         foreach (string? entry in locations.Concat((Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)))
@@ -65,9 +65,8 @@ internal static class Media
             string? directory = entry?.Trim().Trim('"');
             if (string.IsNullOrEmpty(directory) || !Path.IsPathFullyQualified(directory))
                 continue;
-            string candidate = Path.Combine(directory, executable);
-            if (File.Exists(candidate))
-                return candidate;
+            if (File.Exists(Path.Combine(directory, "ffmpeg.exe")) && File.Exists(Path.Combine(directory, "ffprobe.exe")))
+                return directory;
         }
         return null;
     }
@@ -80,7 +79,7 @@ internal static class Media
         bool readsMetadata = tool == "ffprobe";
         bool usesFFmpeg = tool is "ffmpeg" or "ffprobe";
         if (usesFFmpeg)
-            tool = ResolveFFmpeg(tool + ".exe") ?? throw new IOException(FFmpegSetupMessage);
+            tool = Path.Combine(ResolveFFmpegFolder() ?? throw new IOException(FFmpegSetupMessage), tool + ".exe");
         var info = new ProcessStartInfo(tool)
         {
             UseShellExecute = false, CreateNoWindow = true,
@@ -119,7 +118,7 @@ internal static class Media
         var error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         if (process.ExitCode != 0)
-            throw ToolFailure("ffprobe", process.ExitCode, await error);
+            throw new FFmpegFailure(process.StartInfo.FileName, process.ExitCode, await error);
         using var json = JsonDocument.Parse(await output);
         var root = json.RootElement;
         var streams = root.GetProperty("streams");

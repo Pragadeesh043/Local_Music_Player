@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([switch] $NoRestore)
+param(
+    [switch] $NoRestore,
+    [string] $FFmpegDirectory
+)
 
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Installer -NoRestore:$NoRestore
+& (Join-Path $PSScriptRoot 'build.ps1') -Configuration Release -Installer -NoRestore:$NoRestore -FFmpegDirectory $FFmpegDirectory

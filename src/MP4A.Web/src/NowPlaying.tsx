@@ -71,7 +71,7 @@ function Transport({ player, notify }: { player: Player; notify: Notify }) {
     <IconButton label="Previous or restart" disabled={!track} action={() => notify(player.send('previous', {}))}><SkipBack size={17} fill="currentColor" /></IconButton>
     <motion.button className="play-button" title={canPause ? 'Pause' : 'Play'} disabled={!track}
       aria-label={canPause ? 'Pause' : 'Play'} whileTap={{ scale: 0.9 }} transition={spring}
-      onClick={() => notify(player.send(canPause ? 'pause' : 'play', {}))}>
+      onClick={() => notify(player.togglePlayback())}>
       {canPause ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
     </motion.button>
     <IconButton label="Next track" disabled={queueIndex >= queue.length - 1 && !(desktop && track)} action={() => notify(player.send('next', {}))}><SkipForward size={17} fill="currentColor" /></IconButton>
@@ -167,21 +167,17 @@ function Volume({ player, notify }: { player: Player; notify: Notify }) {
   const { volume, desktop } = usePlayer(player)
   const [preview, setPreview] = useState<number | null>(null)
   const dragging = useRef(false)
-  const remembered = useRef(0.7)
   const value = preview ?? volume
 
   const commit = (value: number) => {
-    if (value > 0) remembered.current = value
     setPreview(value)
     notify(player.send('volume', { value }).finally(() => setPreview(current => current === value ? null : current)))
   }
 
   return <div className="volume">
     <IconButton label={desktop?.volumeEnabled === false ? 'Fixed or external volume' : value ? 'Mute' : 'Unmute'}
-      disabled={desktop?.volumeEnabled === false} action={() => {
-      if (volume) remembered.current = volume
-      commit(volume ? 0 : remembered.current)
-    }}>{value ? <Volume2 size={17} /> : <VolumeX size={17} />}</IconButton>
+      disabled={desktop?.volumeEnabled === false} action={() => notify(player.toggleMute())}>
+      {value ? <Volume2 size={17} /> : <VolumeX size={17} />}</IconButton>
     <input className="range" type="range" min={0} max={1} step={0.01} value={value} aria-label="Volume"
       disabled={desktop?.volumeEnabled === false}
       aria-valuetext={Math.round(value * 100) + '%'} style={{ '--fill': value * 100 + '%' } as CSSProperties}
@@ -216,7 +212,7 @@ export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueue
   const queueToggle = useRef<HTMLDivElement>(null)
   const queuePanel = useRef<HTMLElement>(null)
 
-  useEffect(() => { panel.current?.querySelector('button')?.focus() }, [])
+  useEffect(() => { panel.current?.focus() }, [])
   useEffect(() => {
     if (queueOpen) queuePanel.current?.focus()
   }, [queueOpen])
@@ -226,10 +222,12 @@ export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueue
     queueToggle.current?.querySelector('button')?.focus()
   }
 
-  return <motion.section ref={panel} className="full-player" role="dialog" aria-modal="true" aria-label="Now Playing"
+  return <motion.section ref={panel} className="full-player" role="dialog" aria-modal="true" aria-label="Now Playing" tabIndex={-1}
     initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}
     onKeyDown={event => {
+      if (event.defaultPrevented || event.nativeEvent.isComposing) return
       if (event.key === 'Escape') {
+        event.preventDefault()
         event.stopPropagation()
         if (queueOpen) closeQueue()
         else close()
@@ -239,7 +237,11 @@ export function NowPlaying({ player, ambient, notify, close, queueOpen, setQueue
         .filter(node => node.tabIndex >= 0 && !node.closest('[inert]') && node.getClientRects().length > 0)
       const first = nodes[0]
       const last = nodes.at(-1)
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      if (document.activeElement === panel.current) {
+        event.preventDefault()
+        const target = event.shiftKey ? last : first
+        target?.focus()
+      } else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
     }}>
     <Ambient layer={ambient} />

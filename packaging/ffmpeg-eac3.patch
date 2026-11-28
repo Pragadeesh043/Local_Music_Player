@@ -1,0 +1,9 @@
+--- a/build-ffmpeg-win64.sh
++++ b/build-ffmpeg-win64.sh
+@@ -41,5 +41,5 @@
+     --enable-demuxer=aac,aiff,ape,asf,caf,dsf,flac,iff,image2,matroska,mov,mp3,mpc,mpc8,ogg,tak,wav,wv \
+     --enable-parser=aac,flac,mpegaudio,opus,tak,vorbis \
+-    --enable-decoder=aac,alac,ape,bmp,dsd_lsbf,dsd_lsbf_planar,dsd_msbf,dsd_msbf_planar,flac,gif,mjpeg,mp3,mp3float,mpc7,mpc8,opus,png,tak,tiff,vorbis,wavpack,webp,pcm_* \
++    --enable-decoder=aac,alac,ape,bmp,dsd_lsbf,dsd_lsbf_planar,dsd_msbf,dsd_msbf_planar,eac3,flac,gif,mjpeg,mp3,mp3float,mpc7,mpc8,opus,png,tak,tiff,vorbis,wavpack,webp,pcm_* \
+     --enable-encoder=pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,png \
+     --enable-muxer=image2pipe,null,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le \

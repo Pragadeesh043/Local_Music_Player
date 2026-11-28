@@ -20,7 +20,12 @@ internal sealed record DspSettings(bool Enabled, double Preamp, double Bass, dou
     public LoudnessMode Normalization { get; init; }
     public double Headroom { get; init; } = 1;
     public bool Limiter { get; init; }
+    public string? GraphicPreset { get; init; }
     public string? ImpulsePath { get; init; }
+    internal GraphicEqPreset? Curve => GraphicEqPreset.Find(GraphicPreset);
+    internal bool PresetPeakProtection => Curve is { IsFlat: false };
+    internal double PresetTrimDb => Curve?.TrimDb ?? 0;
+    internal double EffectiveHeadroom => PresetPeakProtection ? Math.Max(Headroom, 1) : Headroom;
     public static readonly int[] Centers = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
     public static DspSettings Flat() => new(true, 0, 0, 100, 0,
         [new(100, 0), new(1000, 0), new(5000, 0)], new double[Centers.Length]);
@@ -37,6 +42,12 @@ internal sealed record DspSettings(bool Enabled, double Preamp, double Bass, dou
         for (int i = 0; i < Centers.Length; i++)
             if (Graphic[i] != 0 && Centers[i] < rate * .49)
                 filters.Add(Filter.Create(rate, Centers[i], Graphic[i], 1.4));
+        if (Curve is { Telephone: true })
+        {
+            const double butterworthQ = .7071067811865476;
+            filters.Add(Filter.Create(rate, 300, 0, butterworthQ, FilterShape.HighPass));
+            filters.Add(Filter.Create(rate, 3400, 0, butterworthQ, FilterShape.LowPass));
+        }
         return filters.ToArray();
     }
 
@@ -131,6 +142,7 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
             fadeRemaining = previous is null ? 0 : fadeFrames;
         }
         double targetVolume = volume * Math.Pow(10, normalizationDb / 20);
+        bool fadingFromProtectedPreset = fadeRemaining > 0 && previous is { Enabled: true, PresetPeakProtection: true };
         if (smoothedVolume < 0)
             smoothedVolume = targetVolume;
         for (int i = 0; i < frames * 2; i += 2)
@@ -151,11 +163,16 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
         {
             fir?.Apply(samples, frames);
         }
-        if (settings.Enabled && settings.Limiter)
-            limiter.Limit(samples, frames, settings.Headroom);
+        bool limit = fadingFromProtectedPreset || (settings.Enabled && (settings.Limiter || settings.PresetPeakProtection));
+        if (limit)
+        {
+            double headroom = fadingFromProtectedPreset
+                ? Math.Max(settings.EffectiveHeadroom, previous!.EffectiveHeadroom) : settings.EffectiveHeadroom;
+            limiter.Limit(samples, frames, headroom);
+        }
         else if (limiting)
             limiter.ResetLimiter();
-        limiting = settings.Enabled && settings.Limiter;
+        limiting = limit;
     }
 
     private sealed class StereoFilters(int rate, DspSettings settings)
@@ -163,7 +180,7 @@ internal sealed class StereoDsp(int rate, ImpulseResponse? impulse = null)
         private readonly Filter[] left = settings.Filters(rate), right = settings.Filters(rate, EqChannel.Right);
         private readonly double[] delayLeft = new double[Math.Max(1, rate * 3 / 10000)], delayRight = new double[Math.Max(1, rate * 3 / 10000)];
         private readonly double lowPass = 1 - Math.Exp(-2 * Math.PI * 700 / rate);
-        private readonly double gain = Math.Pow(10, settings.Preamp / 20) * (settings.Invert ? -1 : 1);
+        private readonly double gain = Math.Pow(10, (settings.Preamp + settings.PresetTrimDb) / 20) * (settings.Invert ? -1 : 1);
         private int delayPosition;
         private double lowLeft, lowRight;
 

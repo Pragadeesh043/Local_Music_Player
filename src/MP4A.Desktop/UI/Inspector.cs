@@ -4,16 +4,20 @@ namespace Soundroom;
 
 public sealed partial class MainWindow
 {
-    private object ReadDsp()
+    private object ReadDsp(DspSettings? preview = null)
     {
+        var settings = preview ?? dsp;
         int rate = playback?.WaveFormat.SampleRate ?? 48000;
         double[] Response(EqChannel channel)
         {
-            var filters = dsp.Filters(rate, channel);
+            var filters = settings.Filters(rate, channel);
+            double preamp = settings.Preamp + settings.PresetTrimDb;
             return Enumerable.Range(0, 120).Select(index =>
-                dsp.Enabled ? dsp.Preamp + filters.Sum(filter => filter.Response(20 * Math.Pow(1000, index / 119.0), rate)) : 0).ToArray();
+                settings.Enabled ? preamp + filters.Sum(filter => filter.Response(
+                    Math.Min(20 * Math.Pow(1000, index / 119.0), rate / 2.0), rate)) : 0).ToArray();
         }
-        return new { settings = dsp with { ImpulsePath = null }, impulse = Path.GetFileName(dsp.ImpulsePath),
+        return new { settings = settings with { ImpulsePath = null }, impulse = Path.GetFileName(dsp.ImpulsePath),
+            curvePresets = GraphicEqPreset.All,
             presets = library.Presets().Keys.Order().ToArray(), left = Response(EqChannel.Left), right = Response(EqChannel.Right),
             bypassed = playback is { IsProcessed: false } };
     }
@@ -24,10 +28,13 @@ public sealed partial class MainWindow
         string name = WebText(args, "name").Trim();
         switch (action)
         {
+            case "preview":
             case "apply":
                 var settings = args.GetProperty("settings").Deserialize<DspSettings>(WebJson)
                     ?? throw new InvalidOperationException("Invalid DSP settings.");
                 ValidateDsp(settings);
+                if (action == "preview")
+                    return ReadDsp(settings);
                 await ApplyDsp(settings with { ImpulsePath = dsp.ImpulsePath });
                 break;
             case "reset":
@@ -73,6 +80,8 @@ public sealed partial class MainWindow
             !Enum.IsDefined(settings.Dither) || !Enum.IsDefined(settings.Normalization) ||
             settings.Graphic is null || settings.Graphic.Length != DspSettings.Centers.Length ||
             settings.Graphic.Any(value => !Range(value, -12, 12)) ||
+            (settings.GraphicPreset is not null &&
+                (settings.Curve is not { } curve || !settings.Graphic.SequenceEqual(curve.Gains))) ||
             settings.Parametric is null || settings.Parametric.Length > 64 || settings.Parametric.Any(band =>
                 band is null || !Enum.IsDefined(band.Shape) || !Enum.IsDefined(band.Channel) ||
                 !Range(band.Frequency, 20, 22000) || !Range(band.Gain, -30, 24) || !Range(band.Q, .05, 30)))

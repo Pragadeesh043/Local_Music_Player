@@ -18,19 +18,23 @@ export function trackFormat(track?: Track | null) {
 }
 
 export function trackRate(track?: Track | null) {
-  return track?.rate ? `${track.rate / 1000} kHz` : ''
+  const rate = track?.sourceRate ?? track?.rate
+  if (!rate) return ''
+  return trackFormat(track) === 'DSD' && rate >= 1000000 ? `${rate / 1000000} MHz` : `${rate / 1000} kHz`
 }
 
 export function SignalChain({ player, openTool }: { player: Player; openTool: OpenAudioTool }) {
   const { track, desktop } = usePlayer(player)
   if (!desktop) return null
   const path = desktop.signalPath
+  const outputRate = path?.pcmRate && path.pcmRate !== (track?.sourceRate ?? track?.rate)
+    ? ` · ${path.pcmRate / 1000} kHz` : ''
   return <div className="signal-chain" role="group" aria-label="Signal chain">
     <span title="Source format">{[trackFormat(track), trackRate(track)].filter(Boolean).join(' ') || 'Source'}</span>
     <ArrowRight size={12} aria-hidden="true" />
     <button onClick={() => openTool('DSP')} aria-label="Open DSP settings">{path ? `DSP ${path.dsp ? 'ON' : 'OFF'}` : 'DSP'}</button>
     <ArrowRight size={12} aria-hidden="true" />
-    <button onClick={() => openTool('Output settings')} title={desktop.output} aria-label="Open output settings">{path?.mode ?? 'Output'}</button>
+    <button onClick={() => openTool('Output settings')} title={desktop.output} aria-label="Open output settings">{path?.mode ?? 'Output'}{outputRate}</button>
   </div>
 }
 
@@ -87,7 +91,7 @@ export function Telemetry({ player, compact = false }: { player: Player; compact
     <div className="telemetry-meters" aria-label="Output peak levels">
       {meters.map(({ label, peak }: { label: string; peak?: number }) => <div className="telemetry-meter" key={label}>
         <span>{label}</span>
-        <PeakMeter key={track?.id} label={label} peak={peak} />
+        <PeakMeter key={sample ? track?.id : undefined} label={label} peak={peak} />
         <small>{peak == null ? '—' : peakLabel(peak)} <span>dBFS</span></small>
       </div>)}
     </div>
@@ -97,7 +101,7 @@ export function Telemetry({ player, compact = false }: { player: Player; compact
       {!compact && <div><dt>Correlation</dt><dd>{sample?.correlation?.toFixed(2) ?? '—'}</dd></div>}
     </dl>
     {!sample && <p className="signal-status" role="status">{error ?? (!enabled ? 'Live signal is unavailable' :
-      playing ? 'Waiting for signal…' : track ? 'Playback paused' : 'Play a track to see live signal')}</p>}
+      playing ? 'Waiting for signal…' : track && desktop?.signalPath !== null ? 'Playback paused' : 'Play a track to see live signal')}</p>}
   </div>
 }
 

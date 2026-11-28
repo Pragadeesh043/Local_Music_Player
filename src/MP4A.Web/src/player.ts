@@ -14,6 +14,7 @@ export class Player {
   private signalRequests = Promise.resolve()
   private clock = { position: 0, at: performance.now() }
   private operations = Promise.resolve()
+  private lastAudibleVolume = 0.7
   private seekRevision = 0
   private queuedSeek?: { args: Commands['seek']['args']; operation: Promise<null> }
 
@@ -42,7 +43,10 @@ export class Player {
       this.recent = [track, ...this.recent.filter(item => item.id !== track.id)].slice(0, 6)
     }
     this.state = state
+    if (state.volume > 0) this.lastAudibleVolume = state.volume
     this.clock = { position: state.position, at: performance.now() }
+    if (this.signal.sample && (state.desktop?.signalPath === null ||
+      (this.signal.sample.trackId && this.signal.sample.trackId !== track?.id))) this.updateSignal({})
     this.listeners.forEach(listener => listener())
   }
 
@@ -88,14 +92,53 @@ export class Player {
   time = () => Math.max(0, Math.min(this.state.track?.duration ?? 0,
     this.clock.position + (this.state.playing ? (performance.now() - this.clock.at) / 1000 : 0)))
 
+  private enqueueOperation<T>(run: () => Promise<T> | T) {
+    const operation = this.operations.then(run)
+    this.operations = operation.then(() => undefined, () => undefined)
+    return operation
+  }
+
+  togglePlayback() {
+    return this.enqueueOperation(() => {
+      const { track, playing, pausing } = this.state
+      return track ? this.bridge.request(playing && !pausing ? 'pause' : 'play', {}) : null
+    })
+  }
+
+  seekBy(seconds: number) {
+    const id = this.state.track?.id
+    this.queuedSeek = undefined
+    return this.enqueueOperation(() => {
+      const track = this.state.track
+      if (!track || track.id !== id) return null
+      const position = Math.max(0, Math.min(track.duration, this.time() + seconds))
+      return this.bridge.request('seek', { id: track.id, position })
+    })
+  }
+
+  adjustVolume(amount: number) {
+    return this.changeVolume(volume => volume + amount)
+  }
+
+  toggleMute() {
+    return this.changeVolume(volume => volume > 0 ? 0 : this.lastAudibleVolume)
+  }
+
+  private changeVolume(target: (current: number) => number) {
+    return this.enqueueOperation(() => {
+      const { desktop, volume } = this.state
+      if (desktop?.volumeEnabled === false) return null
+      const value = Math.max(0, Math.min(1, target(volume)))
+      return value !== volume ? this.bridge.request('volume', { value }) : null
+    })
+  }
+
   send<K extends Command>(method: K, args: Commands[K]['args']) {
     this.queuedSeek = undefined
     if (method === 'next' || method === 'previous' || method === 'jump' || (method === 'play' && 'id' in args && args.id)) {
       this.seekRevision++
     }
-    const operation = this.operations.then(() => this.bridge.request(method, args))
-    this.operations = operation.then(() => undefined, () => undefined)
-    return operation
+    return this.enqueueOperation(() => this.bridge.request(method, args))
   }
 
   seek(id: string, position: number) {
@@ -106,13 +149,12 @@ export class Player {
     }
     const args = { id, position }
     const revision = this.seekRevision
-    const operation = this.operations.then(() => {
+    const operation = this.enqueueOperation(() => {
       if (this.queuedSeek?.args === args) this.queuedSeek = undefined
       if (revision !== this.seekRevision || this.state.track?.id !== id) return null
       return this.bridge.request('seek', args)
     })
     this.queuedSeek = { args, operation }
-    this.operations = operation.then(() => undefined, () => undefined)
     return operation
   }
 }
@@ -121,9 +163,10 @@ export const usePlayer = (player: Player) => useSyncExternalStore(player.subscri
 const unsubscribeSignal = () => () => {}
 
 export function useSignal(player: Player, enabled = true) {
-  const { track } = usePlayer(player)
+  const { track, desktop } = usePlayer(player)
   const { sample, error } = useSyncExternalStore(enabled ? player.subscribeSignal : unsubscribeSignal, player.signalSnapshot)
-  return { sample: enabled && track && (!sample?.trackId || sample.trackId === track.id) ? sample : undefined, error }
+  return { sample: enabled && desktop?.signalPath !== null && track &&
+    (!sample?.trackId || sample.trackId === track.id) ? sample : undefined, error }
 }
 
 export function useResource<T>(load: () => Promise<T>) {

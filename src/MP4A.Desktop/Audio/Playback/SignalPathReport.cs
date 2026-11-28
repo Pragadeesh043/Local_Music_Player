@@ -35,6 +35,9 @@ internal sealed record SignalPathReport(string Verdict, bool ExactAtOutput, stri
             Add("Decode", directPcm ? "Integer PCM" : "64-bit floating-point PCM",
                 directPcm ? "Decoded integer samples bypass the float DSP pipeline."
                 : "The decoder supplies PCM frames for processing. DSD sources on this route are decoded to PCM.");
+            if (AudioSource.UsesCableResamplingHeadroom(mode, track, route.Rate))
+                Add("Resampling headroom", Db(-AudioSource.CableResamplingHeadroomDb),
+                    "Shared 7.1 reduces every channel equally before rate conversion to leave room for sample peaks.");
             if (track.Rate != route.Rate)
                 Add("Resample", $"{Rate(track.Rate)} → {Rate(route.Rate)}",
                     route.MinimumPhase ? "Minimum-phase resampling in Soundroom." : "Linear-phase resampling in the decoder.");
@@ -65,6 +68,9 @@ internal sealed record SignalPathReport(string Verdict, bool ExactAtOutput, stri
             if (settings.Preamp != 0) filters.Add($"Preamp {Db(settings.Preamp)}");
             if (filters.Count > 0)
                 Add("Headphone DSP", $"{filters.Count} active settings", string.Join("\n", filters));
+            if (settings.Curve is { IsFlat: false } curve)
+                Add("Graphic EQ preset", curve.Label, $"Preset trim {Db(curve.TrimDb)}." +
+                    (curve.Telephone ? " Voice band: 300 Hz high-pass and 3.4 kHz low-pass." : ""));
             if (settings.Normalization != LoudnessMode.Off)
                 Add("Loudness normalization", $"{LoudnessName(settings.Normalization)} · {Db(processing.NormalizationDb)}",
                     $"Gain target for the delivered block. Configured headroom is {settings.Headroom:0.#} dB.");
@@ -79,8 +85,10 @@ internal sealed record SignalPathReport(string Verdict, bool ExactAtOutput, stri
                 : "Soundroom leaves sample values untouched at the volume stage.");
         if (processed && settings.Enabled && route.ImpulsePath is { } impulse)
             Add("FIR convolution", System.IO.Path.GetFileName(impulse), "The loaded impulse response is applied after digital gain.");
-        if (processed && settings.Enabled && settings.Limiter)
-            Add("Peak limiter", $"Ceiling −{Math.Max(.1, settings.Headroom):0.#} dB", "The limiter uses an oversampled peak estimate.");
+        if (processed && settings.Enabled && (settings.Limiter || settings.PresetPeakProtection))
+            Add("Peak limiter", $"Headroom {Math.Max(.1, settings.EffectiveHeadroom):0.#} dB",
+                settings.PresetPeakProtection ? "The graphic EQ preset uses the oversampled peak limiter." :
+                "The limiter uses an oversampled peak estimate.");
 
         string output = native ? $"1-bit DSD · {Rate(track.SourceRate)}" :
             $"{route.Bits}-bit {(dop ? "DoP carrier" : exclusive ? "PCM" : "float PCM")} · {Rate(route.Rate)}";

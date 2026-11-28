@@ -101,6 +101,20 @@ public sealed partial class MainWindow : Window
             status = message;
     }
 
+    private void ShowPlaybackError(Track selected, Exception error)
+    {
+        if (error is FFmpegFailure { Track: { } failed })
+        {
+            if (track?.Key != failed.Key)
+                DisplayTrack(failed);
+            Diagnostics.Write("Decoding playback audio", error);
+            if (ready)
+                status = $"Could not play “{failed.Title}”. {error.Message}";
+            return;
+        }
+        ShowError($"Playing {selected.Title}", error);
+    }
+
     private async Task RunUiAction(string operation, Func<Task> action)
     {
         try { await action(); }
@@ -212,7 +226,7 @@ public sealed partial class MainWindow : Window
             if (ready && ReferenceEquals(session, playback))
             {
                 Stop();
-                ShowError($"Playing {selected.Title}", error);
+                ShowPlaybackError(selected, error);
             }
         }
     }
@@ -359,7 +373,10 @@ public sealed partial class MainWindow : Window
                 Stop();
                 if (args.Exception is { } error)
                 {
-                    ShowError("Playback stopped", error);
+                    if (error is FFmpegFailure)
+                        ShowPlaybackError(session.CurrentTrack, error);
+                    else
+                        ShowError("Playback stopped", error);
                 }
                 else _ = MoveAsync(1);
             });
@@ -390,7 +407,7 @@ public sealed partial class MainWindow : Window
             if (request != generation || !ready)
                 return;
             Stop();
-            ShowError($"Playing {selected.Title}", error);
+            ShowPlaybackError(selected, error);
         }
         finally
         {
@@ -404,6 +421,7 @@ public sealed partial class MainWindow : Window
         playbackRequested = false;
         var session = playback;
         playback = null;
+        lastSignal = null;
         timer.Stop();
         visibilityTimer.Stop();
         session?.Dispose();

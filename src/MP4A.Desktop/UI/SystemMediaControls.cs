@@ -23,6 +23,7 @@ public sealed partial class MainWindow
             controls.IsEnabled = false;
             controls.IsPlayEnabled = true;
             controls.IsPauseEnabled = true;
+            controls.IsStopEnabled = true;
             controls.IsNextEnabled = true;
             controls.IsPreviousEnabled = true;
             controls.ButtonPressed += MediaButtonPressed;
@@ -59,12 +60,25 @@ public sealed partial class MainWindow
                 {
                     case SystemMediaTransportControlsButton.Play: await ResumePlaybackAsync(); break;
                     case SystemMediaTransportControlsButton.Pause: await PausePlaybackAsync(); break;
+                    case SystemMediaTransportControlsButton.Stop: StopFromMediaControls(); break;
                     case SystemMediaTransportControlsButton.Next: await MoveAsync(1); break;
                     case SystemMediaTransportControlsButton.Previous: await MoveAsync(-1); break;
                 }
             });
             PublishWebState(force: true);
         });
+    }
+
+    private void StopFromMediaControls()
+    {
+        generation++;
+        preparingPlayback?.Cancel();
+        preparingPlayback = null;
+        if (playback is { } session)
+            SyncTrack(session);
+        Stop();
+        resumePosition = 0;
+        status = "";
     }
 
     private void MediaPositionRequested(SystemMediaTransportControls sender, PlaybackPositionChangeRequestedEventArgs args)

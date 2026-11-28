@@ -6,12 +6,14 @@ import { Player, usePlayer, useSignal } from './player'
 
 export function SignalTools({ player }: { player: Player }) {
   const [view, setView] = useState<'live' | 'path'>('live')
+  const { desktop, track } = usePlayer(player)
   return <div className="tool-form">
     <nav className="tool-actions" aria-label="Signal views">
       <button className={view === 'live' ? 'primary-action' : 'load-more'} aria-pressed={view === 'live'} onClick={() => setView('live')}>Live meters</button>
       <button className={view === 'path' ? 'primary-action' : 'load-more'} aria-pressed={view === 'path'} onClick={() => setView('path')}>Signal path</button>
     </nav>
-    {view === 'live' ? <Live player={player} /> : <PathReport player={player} />}
+    {view === 'live' ? <Live key={track?.id} player={player} /> : desktop?.signalPath === null
+      ? <p role="status">Play a track to inspect its signal path.</p> : <PathReport key={track?.id} player={player} />}
   </div>
 }
 

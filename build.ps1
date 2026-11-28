@@ -55,12 +55,7 @@ if ($Installer) {
                 throw "Installer payload is missing $file."
             }
         }
-        $ffmpegOutput = Join-Path $payload 'Tools\FFmpeg'
-        foreach ($tool in 'ffmpeg', 'ffprobe') {
-            $version = & (Join-Path $ffmpegOutput "$tool.exe") -version
-            if ($LASTEXITCODE -ne 0) { throw "Bundled $tool could not start." }
-            $version | Set-Content -LiteralPath (Join-Path $ffmpegOutput "$tool-build.txt") -Encoding utf8
-        }
+        & (Join-Path $PSScriptRoot 'packaging\Test-FFmpeg.ps1') -Directory (Join-Path $payload 'Tools\FFmpeg') -WriteBuildInfo
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md'), (Join-Path $PSScriptRoot 'LICENSE'),
             (Join-Path $PSScriptRoot 'THIRD-PARTY-NOTICES.md') -Destination $payload
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'docs') -Destination $payload -Recurse

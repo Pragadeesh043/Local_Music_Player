@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+
 namespace Soundroom;
 
 internal sealed record PlaybackOptions(bool Memory = false, int TargetRate = 0, int OutputBits = 24,
@@ -18,6 +20,12 @@ internal interface IDecodedSource : IDisposable
 
 internal sealed class AudioSource : IDisposable
 {
+    public const double CableResamplingHeadroomDb = 3;
+    private static readonly double CableResamplingGain = Math.Pow(10, -CableResamplingHeadroomDb / 20);
+
+    public static bool UsesCableResamplingHeadroom(Route route, Track track, int outputRate) =>
+        route == Route.Cable && track.Rate != outputRate;
+
     private readonly object gate = new();
     private readonly int alignment;
     private readonly int bytesPerSample;
@@ -50,10 +58,15 @@ internal sealed class AudioSource : IDisposable
         following = new(queue ?? []);
         this.nextTrack = nextTrack;
         this.canAdvance = canAdvance;
-        IDecodedSource OpenDecoder(Track item, double seconds) =>
-            (route is Route.Dop or Route.NativeDsd) ? new DsdReader(item, seconds, bits) :
-                minimumPhase && encoding == "f64le" && item.Rate != rate ? new MinimumPhaseSource(item, seconds, rate, sharper) :
-                new PcmDecoder(item, seconds, rate, encoding, resampler);
+        IDecodedSource OpenDecoder(Track item, double seconds)
+        {
+            if (route is Route.Dop or Route.NativeDsd)
+                return new DsdReader(item, seconds, bits);
+            double gain = UsesCableResamplingHeadroom(route, item, rate) ? CableResamplingGain : 1;
+            return minimumPhase && encoding == "f64le" && item.Rate != rate
+                ? new MinimumPhaseSource(item, seconds, rate, sharper, gain)
+                : new PcmDecoder(item, seconds, rate, encoding, resampler, gain);
+        }
         open = (item, seconds, cancellation) =>
         {
             cancellation.ThrowIfCancellationRequested();
@@ -76,6 +89,7 @@ internal sealed class AudioSource : IDisposable
 
     public Track Current => Volatile.Read(ref current);
     public long Boundary => Interlocked.Read(ref boundary);
+    public FFmpegFailure? ReadFailure { get; private set; }
 
     private void Prefetch()
     {
@@ -115,12 +129,37 @@ internal sealed class AudioSource : IDisposable
 
     public int Read(byte[] buffer, List<(Track Track, long Frame)>? transitions = null, int prefetchWaitMs = -1)
     {
+        if (ReadFailure is { } failure)
+            ExceptionDispatchInfo.Throw(failure);
         if (prefetchExpired)
             return 0;
         int filled = 0;
+        Track? opening = null;
         while (filled < buffer.Length)
         {
-            int count = source.Read(buffer.AsSpan(filled));
+            int count;
+            try { count = source.Read(buffer.AsSpan(filled)); }
+            catch (FFmpegFailure error) when (filled > 0)
+            {
+                // Deliver the PCM already read into this block before reporting the failure.
+                ReadFailure = error;
+                break;
+            }
+            if (opening is not null)
+            {
+                if (count == 0)
+                    break;
+                lock (gate)
+                {
+                    if (canceled)
+                        break;
+                    Interlocked.Exchange(ref boundary, total / alignment);
+                    Volatile.Write(ref current, opening);
+                    transitions?.Add((opening, total / alignment));
+                    opening = null;
+                    Prefetch();
+                }
+            }
             if (route == Route.Dop)
             {
                 for (int i = 0; i + alignment <= count; i += alignment)
@@ -149,11 +188,9 @@ internal sealed class AudioSource : IDisposable
                 source.Dispose();
                 source = pending;
                 pending = null;
-                Interlocked.Exchange(ref boundary, total / alignment);
-                Volatile.Write(ref current, next);
-                transitions?.Add((next, total / alignment));
+                // The transition becomes visible only once this decoder supplies audio.
+                opening = next;
                 next = null;
-                Prefetch();
             }
         }
         return filled;

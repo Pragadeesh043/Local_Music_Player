@@ -24,7 +24,8 @@ public sealed partial class MainWindow
             Route.NativeDsd => "ASIO DSD",
             _ => "Unknown route"
         };
-        return new(mode, session.IsProcessed && session.ReadProcessing(out _, out _).Controls.Dsp.Enabled);
+        int? pcmRate = session.OutputRoute is Route.Dop or Route.NativeDsd ? null : session.WaveFormat.SampleRate;
+        return new(mode, session.IsProcessed && session.ReadProcessing(out _, out _).Controls.Dsp.Enabled, pcmRate);
     }
 
     private object? ListenSignal(bool enabled)
@@ -68,14 +69,15 @@ public sealed partial class MainWindow
 
     private async Task<object?> ReadSignalReport()
     {
-        if (playback is not { } session)
+        if (playback is not { } session || session.CurrentTrack.Key != track?.Key)
             return null;
+        var current = session.CurrentTrack;
         var snapshot = session.ReadProcessing(out bool applied, out bool pending);
         var format = session.WaveFormat;
         var route = new SignalRoute(session.OutputRoute, session.Device, format.SampleRate, session.OutputBits,
             format.BitsPerSample, session.SourceChannels, session.OutputChannels, session.AsioDriver,
             session.MinimumPhase, session.ImpulsePath);
-        var report = SignalPathReport.Describe(session.CurrentTrack, route, snapshot, HardwareVolume);
+        var report = SignalPathReport.Describe(current, route, snapshot, HardwareVolume);
         string notice = !applied ? "Configured route. Waiting for the first audio block."
             : pending && session.IsProcessed ? "Showing delivered blocks. New DSP settings are still queued."
             : session.State == PlaybackState.Paused ? "Paused. Showing the last delivered audio block." : "";
@@ -87,7 +89,7 @@ public sealed partial class MainWindow
             try { hardware = await Task.Run(() => HardwareOutput.Read(session.Device.Id)); }
             catch (Exception error) { Diagnostics.Write("Reading hardware controls", error); }
         }
-        return ReferenceEquals(session, playback) ? new { report, notice, asio, rate, hardware } : null;
+        return ReferenceEquals(session, playback) && current.Key == track?.Key ? new { report, notice, asio, rate, hardware } : null;
     }
 
     private void SetHardwareMute(bool muted)

@@ -25,7 +25,13 @@ Install the .NET 10 SDK and Node.js 22.12+ or a supported newer version. Install
 
 The development build lands in `artifacts\Release`. The installer lands at `artifacts\MP4A-Setup-x64.exe`. Use `-Configuration Debug` on `build.ps1` for a debug build or `-NoRestore` when dependencies are already restored. The scripts can use local SDK and NSIS installations under `.dotnet` and `.tools\nsis`.
 
-Place both Windows x64 FFmpeg executables in `.tools\ffmpeg`, or set the `FFmpegDirectory` MSBuild property to their folder. The desktop project includes the pair, adjacent DLLs, and upstream license files in its build and publish outputs under `Tools\FFmpeg`. Installer builds require both executables. Use the same desktop publish payload when assembling a full-trust MSIX package. Optionally put sacd_extract in `.tools\sacd` for development. See the [setup guide](../README.md) and [release checklist](release.md).
+Place both Windows x64 FFmpeg executables in `.tools\ffmpeg`, pass `-FFmpegDirectory` to `build.ps1`, or set the `FFmpegDirectory` MSBuild property. The desktop project copies the pair, adjacent DLLs, and upstream notices to `Tools\FFmpeg` in its build and publish outputs. Dev builds can run without a bundle. For a portable copy, keep `Tools\FFmpeg` beside `MP4A.exe`.
+
+At runtime MP4A checks `Tools\FFmpeg` beside the running app, the folder saved in FFmpeg setup, `%LOCALAPPDATA%\MP4A\Tools\FFmpeg`, and then absolute directories on `PATH` in order. The first directory containing both executables supplies the pair. In NSIS and MSIX installs the packaged pair takes precedence.
+
+Run `./packaging/Test-FFmpeg.ps1 -Directory <ffmpeg-folder>` to check the tools and release decoder requirements. When playback fails, MP4A shows a short message in the player and writes the FFmpeg executable, exit code, and stderr to `Logs\Soundroom.log` in the active profile. Press Next to continue from a failed track.
+
+Optionally put `sacd_extract.exe` in `.tools\sacd` for development. See the [setup guide](../README.md) and [release checklist](release.md).
 
 For UI work, run `npm.cmd ci` and `npm.cmd run dev` from `src/MP4A.Web`. The browser demo uses the bundled fixtures and synthesized audio. See the [C++ example](../examples/native-host/README.md) for a second way to exercise the bridge.
 

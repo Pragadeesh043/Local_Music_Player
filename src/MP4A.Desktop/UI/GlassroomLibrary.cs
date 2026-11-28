@@ -184,7 +184,7 @@ public sealed partial class MainWindow
     private static WebTrack ToWebTrack(Track item, StoredCover? cover) =>
         new(item.Key, item.Title, item.Artist, AlbumId(item), item.Album, WebArtwork(item, cover), item.Duration,
             int.TryParse(item.Tag("track", "tracknumber").Split('/')[0], out int number) ? number : 0,
-            item.Codec, item.Rate, item.Bits, item.Channels, item.BitRate, cover?.Preview);
+            item.Codec, item.Rate, item.SourceRate, item.Bits, item.Channels, item.BitRate, cover?.Preview);
 
     private static WebAlbum ToWebAlbum(Track item, StoredCover? cover)
     {
