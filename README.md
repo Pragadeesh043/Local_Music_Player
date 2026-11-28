@@ -12,19 +12,20 @@
 
 - **Import and browse.** Watch folders, add individual files, or reindex the library. Browse albums and editions, filter by folder, or sort tracks by artist or album artist. Discover rotates featured albums and shows recently played tracks.
 - **Search and playlists.** Press `Ctrl+K` to search the current view as you type. Music searches match titles, artists, albums, and metadata tags. Open **Top rated** (four stars or more) or **Frequently played** (three plays or more), or save filters for codec, sample rate, bit depth, dynamic range, genre, year, rating, and play count as smart playlists.
-- **Up Next.** Add, play, or remove queued tracks ahead of the current album, playlist, or library order. Shuffle playback and control it through Windows media controls.
-- **Formats.** Play FLAC, ALAC, WAV, AIFF/AIFC, WavPack, APE, TAK, AAC, MP3, Opus, Ogg Vorbis, Musepack, DSF, and DSDIFF. Open CUE sheets as individual tracks and import SACD ISOs with the optional helper below.
+- **Up Next.** Add, play, or remove queued tracks ahead of the current album, playlist, or library order. Shuffle playback or use Windows media keys for play, pause, next, previous, and stop.
+- **Keyboard shortcuts.** Press Space to play or pause, Left or Right to seek five seconds, and hold Shift to seek 30 seconds. Up and Down adjust volume where the output supports it. Press `M` to mute or restore volume, `S` to toggle shuffle, and Escape to close the active panel. Open **Keyboard shortcuts** in the sidebar for the full list.
+- **Formats.** Play E-AC-3 (Dolby Digital Plus) in M4A with the bundled decoder, along with FLAC, ALAC, WAV, AIFF/AIFC, WavPack, APE, TAK, AAC, MP3, Opus, Ogg Vorbis, Musepack, DSF, and DSDIFF. Open CUE sheets as individual tracks and import SACD ISOs with the optional helper below.
 
 ### Windows Audio Output & Bit-Perfect Playback
 
 - **PCM output.** Use shared stereo, binaural headphones with Steam Audio HRTF, or 7.1 output for a device or HeSuVi. WASAPI Exclusive direct PCM negotiates sample rate and bit depth per track and preserves decoded integer samples during playback, with DSP bypassed. Exclusive DSP mode adds double-precision resampling with linear or minimum phase and optional dither or noise shaping.
 - **DSD output.** Play uncompressed DSD via WASAPI Exclusive DSD over PCM (DoP) with a compatible DAC, or via native DSD with a compatible 64-bit ASIO driver. DSD decoding to PCM is also available.
 - **Playback and profiles.** Play compatible neighboring tracks gaplessly, preload tracks within a configurable RAM limit, and adjust PCM pause and resume fades. Save per-device routing, DSP, and volume settings, including digital volume, fixed line-out, and hardware volume and mute where supported.
-- **Signal path.** The live pill shows **Format → DSP State → Output Mode**. Open the Signal Inspector for the negotiated stream format, processing stages, and available hardware readback.
+- **Signal path.** The live pill distinguishes the source format and rate from the PCM output rate when they differ. Open the Signal Inspector for processing stages and available hardware readback, including the 3 dB of headroom applied before sample-rate conversion in Shared 7.1.
 
 ### Headphone DSP & Acoustic Processing
 
-- **Equalization.** Adjust the 10-band graphic EQ or start with a V, M, W, or U curve. Build a parametric EQ with up to 64 bands, adjustable frequency, gain, and Q, eight filter shapes, and separate L/R response curves. Import AutoEQ or compatible Equalizer APO presets.
+- **Equalization.** Preview 16 graphic EQ curves, including Flat, Warm and Bright Tilt, Telephone, and V, M, W, and U. **Apply DSP** commits the curve with its preset trim and peak protection. Build a parametric EQ with up to 64 bands, adjustable frequency, gain, and Q, eight filter shapes, and separate L/R response curves. Import AutoEQ or compatible Equalizer APO presets.
 - **Headphone and stereo controls.** Adjust crossfeed, preamp, bass shelf, stereo width, balance, and polarity. Load mono or stereo PCM WAV impulses for FIR convolution.
 - **Loudness and presets.** Apply track or album ReplayGain or R128 normalization with adjustable headroom and stereo true-peak brickwall limiting. Save and recall your own DSP presets.
 
@@ -36,6 +37,7 @@
 ### Now Playing, Lyrics & Metadata
 
 - **Now Playing.** Expand the player for an ambient backdrop drawn from album art. Follow time-synced lyrics from embedded tags or a matching `.lrc` file, and select a line to seek.
+- **Settings.** Open Settings from the sidebar to find the installed build version, GitHub links, and shortcuts to output settings, DSP, and the keyboard reference.
 - **Track Info.** See format, sample rate, bit depth, channels, bitrate, and duration. Open file details for the path, container, size, tags, and rating. View full-size artwork and local PDF booklets.
 - **File analysis.** Scan tracks or editions for loudness and ReplayGain. Track scans also report true peak, estimated dynamic range, spectral cutoff checks, and file integrity via FLAC PCM MD5 verification or a SHA-256 hash.
 
@@ -62,6 +64,6 @@ For SACD ISO import, place the optional `sacd_extract.exe` in the installed `Too
 - [Build and contribute](docs/development.md)
 - [Audio modes and DSP](docs/audio.md) · [Verification notes](docs/audio.md#verification)
 - [Release checklist](docs/release.md) · [Changelog](CHANGELOG.md)
-- [Third-party notices](THIRD-PARTY-NOTICES.md) and [FFmpeg source archive](https://github.com/Pragadeesh043/MP4A/releases/download/v1.0.1/MP4A-FFmpeg-8.0.3-win64-source.tar.gz)
+- [Third-party notices](THIRD-PARTY-NOTICES.md) and [FFmpeg source archive](https://github.com/Pragadeesh043/MP4A/releases/download/v1.0.4/MP4A-FFmpeg-8.0.3-win64-source.tar.gz)
 
 MP4A is available under the [MIT License](LICENSE). Third-party components retain their own licenses.

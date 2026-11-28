@@ -183,6 +183,19 @@ public sealed partial class MainWindow
     {
         switch (method)
         {
+            case "appInfo":
+                return new { version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) };
+            case "openRepository":
+                string suffix = WebText(args, "page") switch
+                {
+                    "repository" => "",
+                    "releases" => "/releases",
+                    "issues" => "/issues",
+                    _ => throw new InvalidOperationException("Unknown repository page.")
+                };
+                if (!await Windows.System.Launcher.LaunchUriAsync(new Uri("https://github.com/Pragadeesh043/MP4A" + suffix)))
+                    throw new InvalidOperationException("Windows could not open the browser.");
+                break;
             case "state":
                 if (!glassroomConnected)
                 {

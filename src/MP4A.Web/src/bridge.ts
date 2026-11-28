@@ -60,6 +60,8 @@ export type LibraryQuery = {
 
 export type Page = { items: (Album | Track | Playlist)[]; total: number }
 export type Commands = {
+  appInfo: { args: Record<string, never>; result: { version: string | null } }
+  openRepository: { args: { page: 'repository' | 'releases' | 'issues' }; result: null }
   state: { args: Record<string, never>; result: Playback }
   library: { args: LibraryQuery; result: Page }
   featuredAlbums: { args: Record<string, never>; result: Album[] }

@@ -1,4 +1,4 @@
-import { Compass, Disc3, FilePlus2, FolderOpen, Keyboard, LibraryBig, ListFilter, ListMusic, RefreshCw, Search, X } from 'lucide-react'
+import { Compass, Disc3, FilePlus2, FolderOpen, Keyboard, LibraryBig, ListFilter, ListMusic, RefreshCw, Search, Settings as SettingsIcon, X } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, motion, MotionConfig } from 'motion/react'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -12,6 +12,7 @@ import { handlePlaybackShortcut, keyboardShortcuts } from './keyboardShortcuts'
 import { FileTools } from './FileTools'
 import { OutputSettings } from './OutputSettings'
 import { SignalTools } from './SignalTools'
+import { Settings } from './Settings'
 import { ToolDialog } from './ToolDialog'
 import { Dock, IconButton, NowPlaying, QueueRail, spring } from './NowPlaying'
 import { Player, usePlayer, useResource } from './player'
@@ -28,6 +29,7 @@ const queueRailMedia = '(min-width: 1160px)'
 
 export function App({ player }: { player: Player }) {
   const [route, setRoute] = useState<Route>('Discover')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
@@ -41,6 +43,7 @@ export function App({ player }: { player: Player }) {
   const [wide, setWide] = useState(() => matchMedia(queueRailMedia).matches)
   const [error, setError] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
+  const focusSearch = useRef(false)
   const browsePosition = useRef<BrowsePosition | null>(null)
   const opener = useRef<HTMLElement | null>(null)
   const restoreFocus = useRef(false)
@@ -91,6 +94,22 @@ export function App({ player }: { player: Player }) {
   }, [expanded])
 
   useEffect(() => {
+    if (!settingsOpen && focusSearch.current) {
+      focusSearch.current = false
+      searchInput.current?.focus()
+    }
+  }, [settingsOpen])
+
+  const openSearch = useCallback(() => {
+    if (settingsOpen) {
+      focusSearch.current = true
+      setSettingsOpen(false)
+    } else {
+      searchInput.current?.focus()
+    }
+  }, [settingsOpen])
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.isComposing || tool) return
       const host = player.snapshot().desktop
@@ -101,7 +120,7 @@ export function App({ player }: { player: Player }) {
       }
       if (!expanded && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        searchInput.current?.focus()
+        openSearch()
         return
       }
       if (event.key === 'Escape' && !expanded) {
@@ -120,9 +139,10 @@ export function App({ player }: { player: Player }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [player, notify, tool, expanded, wide, showRail])
+  }, [player, notify, tool, expanded, wide, showRail, openSearch])
 
   function navigate(next: Route) {
+    setSettingsOpen(false)
     setDetail(null)
     setSearch('')
     setQuery('')
@@ -149,12 +169,12 @@ export function App({ player }: { player: Player }) {
           <aside className="sidebar" aria-label="Music navigation">
             <div className="brand"><img className="brand-symbol" src="./brand.png" alt="" width="38" height="38" /><strong>MP4A</strong></div>
             <nav>
-              <button type="button" className="nav-item" title="Search" onClick={() => searchInput.current?.focus()}>
+              <button type="button" className="nav-item" title="Search" onClick={openSearch}>
                 <Search size={19} /><span>Search</span>
               </button>
               {navigation.map(({ title, Icon }) => <button key={title} type="button" className="nav-item" title={title}
-                aria-current={route === title ? 'page' : undefined} onClick={() => navigate(title)}>
-                {route === title && <motion.span className="nav-highlight" layoutId="active-navigation" transition={spring} />}
+                aria-current={!settingsOpen && route === title ? 'page' : undefined} onClick={() => navigate(title)}>
+                {!settingsOpen && route === title && <motion.span className="nav-highlight" layoutId="active-navigation" transition={spring} />}
                 <Icon size={19} /><span>{title}</span>
               </button>)}
             </nav>
@@ -172,10 +192,12 @@ export function App({ player }: { player: Player }) {
               <button className="nav-item" title="Reindex library" onClick={() => desktopAction('reindex')}><RefreshCw size={19} /><span>Reindex library</span></button>
               <button className="nav-item" title="Library tools" onClick={() => setTool('Library tools')}><ListFilter size={19} /><span>Library tools</span></button>
               <button className="nav-item" title="Keyboard shortcuts" onClick={() => setTool('Keyboard shortcuts')}><Keyboard size={19} /><span>Keyboard shortcuts</span></button>
+              <button className="nav-item" title="Settings" aria-current={settingsOpen ? 'page' : undefined}
+                onClick={() => setSettingsOpen(true)}><SettingsIcon size={19} /><span>Settings</span></button>
               <div className="desktop-output" title={desktop.output}>{desktop.output}</div>
             </nav>}
           </aside>
-          <main className="main-panel">
+          <main className="main-panel">{settingsOpen ? <Settings player={player} notify={notify} open={setTool} /> : <>
             <header className="toolbar">
               <div className="search">
                 <Search size={17} aria-hidden="true" />
@@ -204,6 +226,7 @@ export function App({ player }: { player: Player }) {
                   inspect={desktop ? id => { setFileId(id); setTool('Track details') } : undefined} />
               </motion.div>
             </AnimatePresence>
+            </>}
             {desktop?.status && <div className="desktop-status" role="status">{desktop.status}</div>}
           </main>
           {wide && showRail && !expanded && <QueueRail player={player} notify={notify} openTool={setTool} />}

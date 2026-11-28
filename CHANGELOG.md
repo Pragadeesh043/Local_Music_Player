@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.4
+
+### Added
+
+- **Settings** shows the desktop build version and links to the GitHub repository, releases, and issues. It also provides access to output settings, DSP, and the keyboard reference.
+
+- **Keyboard controls** for play and pause, five- and 30-second seeks, volume, mute, and shuffle. Text fields and keyboard-operated controls keep their own shortcuts. The sidebar includes a keyboard reference, and Windows media controls now handle Stop.
+- **12 graphic EQ presets** alongside V, M, W, and U, including Flat, Mid-Hump, Warm and Bright Tilt, Telephone, bass and treble curves, Vocal Booster, Warm / Full, and Scooped. Preview the response and use **Apply DSP** to commit the curve, its trim, and peak protection. Flat resets the graphic bands and their preset effects.
+- **E-AC-3 playback** in M4A with the bundled FFmpeg 8.0.3 decoder.
+
+### Fixed
+
+- **Now Playing** shares its album-art backdrop with the top bar. Keyboard focus uses a softer accent, and the sidebar keeps long device names within its width.
+
+- **Playback errors** identify the failed track and keep FFmpeg details in the diagnostic log. A decoder failure clears stale signal readouts and leaves the remaining queue available through **Next**.
+- **Shared 7.1** applies 3 dB of headroom before sample-rate conversion to reduce overs. The tested 44.1 kHz WAV stayed below full scale with both resampling phases and both filter widths.
+- **DSD readouts** show the source rate separately from the PCM output rate. The Native ASIO DSD format rejection names the correct mode.
+
+### Packaging
+
+- NSIS and MSIX builds check for the E-AC-3 decoder and the MOV/M4A demuxer. MP4A selects FFmpeg and FFprobe together from the first complete tool directory.
+
 ## v1.0.3
 
 ### What's changed
